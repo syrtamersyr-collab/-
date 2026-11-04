@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>خيط الضوء — مركز مكة</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  html,body{margin:0;background:#000}
+  canvas{display:block;width:1080px;height:1920px}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// «خيط الضوء» — Makkah Technologies wireless-internet reel. 1080x1920, 35s.
+// Everything is drawn from render(t), so any frame can be rendered on its own.
+const W = 1080, H = 1920, DUR = 35;
+const C = {
+  navy: '#02376C', green: '#50BE1E', night: '#04152B', cyan: '#5FE3FF',
+  white: '#F3F6FA', warm: '#F2B45A'
+};
+const DISPLAY = '"Readex Pro","IBM Plex Sans Arabic",sans-serif';
+const BODY = '"IBM Plex Sans Arabic","Readex Pro",sans-serif';
+
+const cv = document.getElementById('c');
+let ctx = cv.getContext('2d');
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const eoutExpo = p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p);
+const einExpo = p => p <= 0 ? 0 : Math.pow(2, 10 * p - 10);
+const eback = p => { const c1 = 1.7, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+const smooth = p => p * p * (3 - 2 * p);
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+// White curved panel antenna with feed arm, as installed on Homs rooftops.
+function panelAntenna(c, x, y, sc = 1, glow = 0) {
+  c.save(); c.translate(x, y); c.scale(sc, sc);
+  c.strokeStyle = '#7F93AA'; c.lineWidth = 9; c.beginPath(); c.moveTo(14, 30); c.lineTo(14, 170); c.stroke();
+  const g = c.createLinearGradient(-80, -60, 80, 60); g.addColorStop(0, '#FFFFFF'); g.addColorStop(.6, '#DCE3EA'); g.addColorStop(1, '#AAB6C3');
+  c.fillStyle = g;
+  c.beginPath(); c.moveTo(-82, -48); c.quadraticCurveTo(0, -66, 82, -48); c.quadraticCurveTo(70, 0, 82, 48); c.quadraticCurveTo(0, 66, -82, 48); c.quadraticCurveTo(-70, 0, -82, -48); c.closePath(); c.fill();
+  c.fillStyle = 'rgba(90,110,130,.45)';
+  for (let i = -70; i <= 70; i += 9) for (let j = -44; j <= 44; j += 9) if (Math.abs(i) > 22) { c.beginPath(); c.arc(i, j, 1.4, 0, 7); c.fill(); }
+  c.fillStyle = '#F4F7FA'; c.fillRect(-20, -58, 40, 116);
+  c.fillStyle = '#EEF2F6'; c.beginPath(); c.moveTo(-10, -6); c.lineTo(-62, 4); c.lineTo(-62, 26); c.lineTo(-10, 14); c.closePath(); c.fill();
+  c.fillStyle = '#FFFFFF'; rr(c, -84, -4, 30, 34, 6); c.fill();
+  if (glow > 0) { c.globalCompositeOperation = 'lighter'; c.fillStyle = `rgba(80,190,30,${glow})`; c.beginPath(); c.arc(-70, 12, 9, 0, 7); c.fill(); }
+  c.restore();
+}
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+// Animated Arabic headline: words rise in from the right, one after another.
+function words(text, x, y, size, t, tin, tout, o = {}) {
+  if (t < tin || t > tout + 0.6) return;
+  const font = `${o.weight || 700} ${size}px ${o.font || DISPLAY}`;
+  ctx.save();
+  ctx.font = font; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const ws = text.split(' ');
+  const sp = ctx.measureText(' ').width;
+  const wd = ws.map(w => ctx.measureText(w).width);
+  const total = wd.reduce((a, b) => a + b, 0) + sp * (ws.length - 1);
+  let cx = x + total / 2;
+  const outP = eio(seg(t, tout, tout + 0.45));
+  ws.forEach((w, i) => {
+    const p = eout(seg(t, tin + i * (o.stagger ?? 0.11), tin + i * (o.stagger ?? 0.11) + 0.5));
+    const a = p * (1 - outP);
+    if (a > 0.003) {
+      ctx.globalAlpha = a;
+      ctx.filter = `blur(${((1 - p) * 14 + outP * 10).toFixed(1)}px)`;
+      ctx.shadowColor = 'rgba(0,8,20,.55)'; ctx.shadowBlur = 28;
+      ctx.fillStyle = (o.colors && o.colors[i]) || o.color || C.white;
+      ctx.fillText(w, cx, y + (1 - p) * 46 - outP * 30);
+    }
+    cx -= wd[i] + sp;
+  });
+  ctx.restore();
+}
+
+// Glowing light thread through a list of points.
+function thread(pts, width = 10, alpha = 1, col = C.green) {
+  if (pts.length < 2) return;
+  ctx.save();
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const path = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); };
+  ctx.globalAlpha = alpha * 0.35; ctx.strokeStyle = col; ctx.lineWidth = width * 3.2; ctx.shadowColor = col; ctx.shadowBlur = 50; path(); ctx.stroke();
+  ctx.globalAlpha = alpha * 0.9; ctx.lineWidth = width; ctx.shadowBlur = 24; path(); ctx.stroke();
+  ctx.globalAlpha = alpha; ctx.strokeStyle = '#E9FFD9'; ctx.lineWidth = width * 0.32; ctx.shadowBlur = 0; path(); ctx.stroke();
+  ctx.restore();
+}
+function headGlow(x, y, r = 60, a = 1) {
+  ctx.save();
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(235,255,220,${a})`); g.addColorStop(.25, `rgba(120,230,70,${.7 * a})`); g.addColorStop(1, 'rgba(80,190,30,0)');
+  ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+  ctx.restore();
+}
+function flash(a, col = '220,255,200') { if (a <= 0) return; ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(${col},${a})`; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+
+// ---------- assets & pre-rendered layers ----------
+const IMG = {};
+function loadImg(k, src) { return new Promise(r => { const i = new Image(); i.onload = () => { IMG[k] = i; r(); }; i.src = src; }); }
+
+let STARS, GRAIN, MAP, MAPLIT, ROOF, VIGN;
+const MW = 2600, MH = 3600;           // map canvas size
+const NODES = [];                      // coverage nodes on the map
+
+function buildStars() {
+  const r = rng(7); STARS = [];
+  for (let i = 0; i < 260; i++) STARS.push([r() * W, r() * H * 0.6, r() * 1.8 + .3, r() * 6.28]);
+}
+function buildGrain() {
+  GRAIN = mk(512, 512); const g = GRAIN.getContext('2d'); const d = g.createImageData(512, 512); const r = rng(3);
+  for (let i = 0; i < d.data.length; i += 4) { const v = r() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+  g.putImageData(d, 0, 0);
+}
+function buildVignette() {
+  VIGN = mk(W, H); const g = VIGN.getContext('2d');
+  const gr = g.createRadialGradient(W / 2, H * .48, H * .28, W / 2, H * .5, H * .78);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,4,12,.62)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+}
+// Top-down Homs-like city: street grid, blocks, the Orontes to the west.
+function buildMap() {
+  MAP = mk(MW, MH); MAPLIT = mk(MW, MH);
+  const a = MAP.getContext('2d'), b = MAPLIT.getContext('2d');
+  a.fillStyle = '#05182C'; a.fillRect(0, 0, MW, MH);
+  b.fillStyle = '#0A2A1E'; b.fillRect(0, 0, MW, MH);
+  const r = rng(11);
+  const ang = -0.18, cs = Math.cos(ang), sn = Math.sin(ang);
+  const river = y => 360 + 140 * Math.sin(y / 520) + 60 * Math.sin(y / 190);
+  for (let gy = -400; gy < MH + 400; gy += 120) {
+    for (let gx = -400; gx < MW + 400; gx += 120) {
+      if (r() < 0.06) continue;
+      const w = 70 + r() * 40, h = 70 + r() * 40;
+      const x0 = gx + r() * 12, y0 = gy + r() * 12;
+      const X = MW / 2 + (x0 - MW / 2) * cs - (y0 - MH / 2) * sn, Y = MH / 2 + (x0 - MW / 2) * sn + (y0 - MH / 2) * cs;
+      if (X < river(Y) + 70 && X > river(Y) - 230) continue;
+      for (const [c, lit] of [[a, 0], [b, 1]]) {
+        c.save(); c.translate(X, Y); c.rotate(ang);
+        c.fillStyle = lit ? `hsl(${100 + r() * 30},${45 + r() * 15}%,${16 + r() * 8}%)` : `hsl(212,${45 + r() * 10}%,${11 + r() * 5}%)`;
+        rr(c, 0, 0, w, h, 6); c.fill();
+        if (lit) {
+          for (let k = 0; k < 6; k++) { c.fillStyle = r() < .5 ? 'rgba(255,214,140,.9)' : 'rgba(190,255,150,.85)'; c.fillRect(6 + r() * (w - 12), 6 + r() * (h - 12), 3, 3); }
+        } else {
+          for (let k = 0; k < 2; k++) { c.fillStyle = 'rgba(255,200,120,.35)'; c.fillRect(6 + r() * (w - 12), 6 + r() * (h - 12), 2.5, 2.5); }
+        }
+        c.restore();
+      }
+    }
+  }
+  // avenues
+  const av = (c, col, w) => {
+    c.strokeStyle = col; c.lineWidth = w; c.lineCap = 'round';
+    for (let i = 0; i < 7; i++) {
+      c.beginPath(); const y = 300 + i * 500; c.moveTo(0, y); c.bezierCurveTo(MW * .3, y - 120, MW * .7, y + 140, MW, y - 40); c.stroke();
+    }
+    for (let i = 0; i < 5; i++) {
+      c.beginPath(); const x = 700 + i * 470; c.moveTo(x, 0); c.bezierCurveTo(x + 120, MH * .3, x - 140, MH * .7, x + 60, MH); c.stroke();
+    }
+  };
+  av(a, '#123A60', 14); av(b, 'rgba(140,255,90,.55)', 6);
+  // river
+  for (const [c, lit] of [[a, 0], [b, 1]]) {
+    c.beginPath(); c.moveTo(river(0) - 90, 0);
+    for (let y = 0; y <= MH; y += 20) c.lineTo(river(y) - 90 + 18 * Math.sin(y / 90), y);
+    for (let y = MH; y >= 0; y -= 20) c.lineTo(river(y) + 10 + 14 * Math.sin(y / 70), y);
+    c.closePath(); c.fillStyle = lit ? '#0E5A6E' : '#0B2F4C'; c.fill();
+    c.strokeStyle = lit ? 'rgba(95,227,255,.7)' : 'rgba(95,227,255,.18)'; c.lineWidth = 3; c.stroke();
+  }
+  // coverage nodes (Al-Qusour at the centre)
+  const cx = MW / 2, cy = MH / 2;
+  // Homs neighbourhoods around Al-Qusour (angle: 0 = east, clockwise; rough real-world bearings)
+  const main = [['الخالدية', -1.6, 560], ['البياضة', -0.85, 640], ['الزهراء', 0.05, 620], ['عكرمة', 0.85, 640],
+                ['باب السباع', 1.6, 580], ['الإنشاءات', 2.35, 620], ['الغوطة', 3.05, 560], ['الوعر', 3.55, 800]];
+  main.forEach(([name, an, d], i) => NODES.push({ name, x: cx + Math.cos(an) * d, y: cy + Math.sin(an) * d * 1.15, t: 17.0 + i * 0.6, big: 1 }));
+  const r2 = rng(5);
+  for (let i = 0; i < 14; i++) { const an = r2() * 6.28, d = 820 + r2() * 520; NODES.push({ x: cx + Math.cos(an) * d, y: cy + Math.sin(an) * d * 1.2, t: 21.6 + i * 0.2, big: 0 }); }
+}
+// Rooftop strip used in the flyover (water tanks + dishes, very Homs).
+function buildRoofs() {
+  ROOF = mk(4200, 520); const g = ROOF.getContext('2d'); const r = rng(21);
+  let x = 0;
+  while (x < 4200) {
+    const w = 160 + r() * 220, h = 160 + r() * 260, y = 520 - h;
+    g.fillStyle = `hsl(214,40%,${7 + r() * 4}%)`; g.fillRect(x, y, w, h);
+    g.fillStyle = '#0E2A48'; g.fillRect(x, y, w, 8);
+    for (let k = 0; k < (r() * 3 | 0) + 1; k++) { // water tanks
+      const tx = x + 15 + r() * (w - 60), tw = 34 + r() * 16;
+      g.fillStyle = '#163A5E'; rr(g, tx, y - 40, tw, 40, 6); g.fill();
+      g.fillStyle = '#0B2140'; g.fillRect(tx + 4, y - 44, tw - 8, 6);
+    }
+    if (r() < .55) { // dish antenna
+      const dx = x + w * (.3 + r() * .5);
+      g.save(); g.globalAlpha = .55; panelAntenna(g, dx, y - 64, 0.34); g.restore();
+    }
+    for (let k = 0; k < 10; k++) if (r() < .4) { g.fillStyle = r() < .7 ? 'rgba(255,196,110,.85)' : 'rgba(200,230,255,.5)'; g.fillRect(x + 12 + r() * (w - 30), y + 30 + r() * (h - 60), 12, 16); }
+    x += w + 4;
+  }
+}
+
+// ---------- shared pieces ----------
+function sky(top = '#030E1E', bot = '#0B2A4F', tw = 0) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, top); g.addColorStop(1, bot);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.fillStyle = '#fff';
+  for (const [x, y, s, ph] of STARS) { ctx.globalAlpha = .35 + .3 * Math.sin(tw * 2 + ph); ctx.fillRect(x, y, s, s); }
+  ctx.restore();
+}
+function moon(x, y, r) {
+  ctx.save();
+  const g = ctx.createRadialGradient(x, y, r * .6, x, y, r * 4); g.addColorStop(0, 'rgba(220,235,255,.25)'); g.addColorStop(1, 'rgba(220,235,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8);
+  ctx.beginPath(); ctx.rect(x - r * 5, y - r * 5, r * 10, r * 10); ctx.arc(x + r * .45, y - r * .2, r * .92, 0, 7); ctx.clip('evenodd');
+  ctx.fillStyle = '#E8F0FA'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function skyline(baseY, off, seed, col, hmin, hmax, lights = 0) {
+  const r = rng(seed); ctx.save(); ctx.fillStyle = col;
+  let x = -((off % 3000) + 3000) % 3000 - 400;
+  const bl = [];
+  while (x < W + 400) {
+    const w = 60 + r() * 140, h = hmin + r() * (hmax - hmin);
+    ctx.fillRect(x, baseY - h, w + 2, h + 2000);
+    if (lights) for (let k = 0; k < 6; k++) if (r() < lights) bl.push([x + 8 + r() * (w - 20), baseY - h + 15 + r() * (h - 30)]);
+    if (r() < .12) { ctx.fillRect(x + w / 2 - 6, baseY - h - 120, 12, 120); ctx.beginPath(); ctx.moveTo(x + w / 2 - 9, baseY - h - 120); ctx.lineTo(x + w / 2, baseY - h - 160); ctx.lineTo(x + w / 2 + 9, baseY - h - 120); ctx.fill(); }
+    x += w;
+  }
+  ctx.fillStyle = 'rgba(255,200,120,.8)'; for (const [a, b] of bl) ctx.fillRect(a, b, 6, 8);
+  ctx.restore();
+}
+
+// ================= SCENE 1 — frozen living room (0–5s) =================
+function scene1(t) {
+  const p = eio(seg(t, 0, 4.3));
+  const dive = einExpo(seg(t, 4.25, 5.0));
+  const LED = [925, 712];
+  const z = lerp(1.0 + 0.075 * p, 7, dive);
+  const fx = lerp(lerp(540, 600, p), LED[0], dive), fy = lerp(1060, LED[1], dive);
+  ctx.save();
+  ctx.translate(W / 2, H * .5); ctx.scale(z, z); ctx.translate(-fx, -fy);
+
+  const layer = (k, fn) => { ctx.save(); ctx.translate(k * p, 0); fn(); ctx.restore(); };
+
+  // wall
+  const wg = ctx.createLinearGradient(0, -200, 0, H); wg.addColorStop(0, '#0C1F35'); wg.addColorStop(1, '#172B3F');
+  ctx.fillStyle = wg; ctx.fillRect(-600, -600, W + 1200, H + 1200);
+  // warm lamp spill
+  const lg = ctx.createRadialGradient(120, 980, 20, 120, 980, 620); lg.addColorStop(0, 'rgba(242,180,90,.32)'); lg.addColorStop(1, 'rgba(242,180,90,0)');
+  ctx.fillStyle = lg; ctx.fillRect(-600, 300, 1400, 1400);
+
+  // window with night Homs
+  layer(55, () => {
+    ctx.save(); rr(ctx, 300, 280, 480, 700, 10); ctx.clip();
+    const sg = ctx.createLinearGradient(0, 280, 0, 980); sg.addColorStop(0, '#04122A'); sg.addColorStop(1, '#0E3360'); ctx.fillStyle = sg; ctx.fillRect(300, 280, 480, 700);
+    ctx.fillStyle = '#fff'; for (const [x, y, s] of STARS.slice(0, 60)) ctx.fillRect(300 + x * .44, 280 + y * .5, s, s);
+    moon(670, 400, 26);
+    ctx.save(); ctx.translate(0, 0); skyline(980, 0, 31, '#071A33', 60, 210, .25); ctx.restore();
+    ctx.restore();
+  });
+  // window frame + curtains
+  layer(30, () => {
+    ctx.strokeStyle = '#081322'; ctx.lineWidth = 22; rr(ctx, 300, 280, 480, 700, 10); ctx.stroke();
+    ctx.lineWidth = 12; ctx.beginPath(); ctx.moveTo(540, 280); ctx.lineTo(540, 980); ctx.moveTo(300, 600); ctx.lineTo(780, 600); ctx.stroke();
+    for (const [x0, dir] of [[210, 1], [870, -1]]) {
+      for (let i = 0; i < 6; i++) {
+        const g = ctx.createLinearGradient(x0 + i * 20 * dir, 0, x0 + (i + 1) * 20 * dir, 0);
+        g.addColorStop(0, '#1A3654'); g.addColorStop(.5, '#24476B'); g.addColorStop(1, '#152C47');
+        ctx.fillStyle = g; ctx.fillRect(dir > 0 ? x0 + i * 20 : x0 - (i + 1) * 20, 230, 20, 900);
+      }
+    }
+    ctx.fillStyle = '#0A1626'; ctx.fillRect(170, 222, 740, 16);
+    // wall clock, frozen
+    const cx = 120, cy = 430;
+    ctx.fillStyle = '#0A1626'; ctx.beginPath(); ctx.arc(cx, cy, 84, 0, 7); ctx.fill();
+    ctx.fillStyle = '#E3E9F1'; ctx.beginPath(); ctx.arc(cx, cy, 72, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#2A3A50'; ctx.lineWidth = 4;
+    for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 58, cy + Math.sin(a) * 58); ctx.lineTo(cx + Math.cos(a) * 66, cy + Math.sin(a) * 66); ctx.stroke(); }
+    const hand = (a, l, w, c) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a - Math.PI / 2) * l, cy + Math.sin(a - Math.PI / 2) * l); ctx.stroke(); };
+    hand(10.15 / 12 * 6.283, 36, 7, '#0B1F38'); hand(8 / 60 * 6.283, 54, 5, '#0B1F38'); hand(37 / 60 * 6.283 + Math.sin(t * 40) * .004, 60, 2.5, '#D9412B');
+  });
+
+  // shelf + router (the router stays alive)
+  layer(30, () => {
+    ctx.fillStyle = '#4A3322'; ctx.fillRect(820, 768, 230, 18);
+    ctx.fillStyle = '#0E2036'; rr(ctx, 860, 700, 140, 68, 12); ctx.fill();
+    ctx.strokeStyle = '#1B3B60'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = '#0E2036'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(880, 704); ctx.lineTo(866, 610); ctx.moveTo(980, 704); ctx.lineTo(994, 610); ctx.stroke();
+  });
+  // sofa
+  layer(0, () => {
+    ctx.fillStyle = '#1C3350'; rr(ctx, -40, 1040, 1160, 360, 60); ctx.fill();
+    ctx.fillStyle = '#213D5F'; rr(ctx, 60, 1080, 420, 240, 40); ctx.fill(); rr(ctx, 600, 1080, 420, 240, 40); ctx.fill();
+    ctx.fillStyle = '#0B1828'; ctx.fillRect(-600, 1520, W + 1200, 1000);
+    // rug
+    ctx.fillStyle = '#3A1E22'; ctx.beginPath(); ctx.ellipse(540, 1700, 640, 140, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#6E3A2E'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(540, 1700, 590, 118, 0, 0, 7); ctx.stroke();
+  });
+
+  // foreground: table, mate, kettle, ball, phone
+  layer(-45, () => {
+    // ball frozen mid-air with motion arcs
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(330, 1340, 190 + i * 18, Math.PI * 1.05, Math.PI * 1.32); ctx.stroke(); }
+    ctx.restore();
+    const bx = 165, by = 1170 + Math.sin(t * 1.3) * 1.5;
+    ctx.fillStyle = '#E8ECF2'; ctx.beginPath(); ctx.arc(bx, by, 58, 0, 7); ctx.fill();
+    ctx.fillStyle = '#D23B2E'; ctx.beginPath(); ctx.arc(bx, by, 58, -0.9, 0.6); ctx.lineTo(bx, by); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx, by, 58, 2.2, 3.4); ctx.lineTo(bx, by); ctx.fill();
+    const bg = ctx.createRadialGradient(bx - 20, by - 22, 4, bx, by, 60); bg.addColorStop(0, 'rgba(255,255,255,.5)'); bg.addColorStop(1, 'rgba(0,0,0,.25)'); ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx, by, 58, 0, 7); ctx.fill();
+
+    // table
+    ctx.fillStyle = '#3B2618'; ctx.fillRect(170, 1440, 34, 160); ctx.fillRect(880, 1440, 34, 160);
+    const tg = ctx.createLinearGradient(0, 1390, 0, 1450); tg.addColorStop(0, '#8A5F3E'); tg.addColorStop(1, '#5A3A25');
+    ctx.fillStyle = tg; rr(ctx, 110, 1390, 860, 58, 14); ctx.fill();
+
+    // copper rakweh (coffee pot) held just out of frame, pouring
+    ctx.save(); ctx.translate(834, 1068); ctx.rotate(-0.6);
+    ctx.strokeStyle = '#2B1A10'; ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(80, -70); ctx.lineTo(420, -150); ctx.stroke();
+    const kg = ctx.createLinearGradient(-110, 0, 110, 0); kg.addColorStop(0, '#6E3B1C'); kg.addColorStop(.35, '#E7A56A'); kg.addColorStop(.55, '#B8703C'); kg.addColorStop(1, '#5A2E14');
+    ctx.fillStyle = kg;
+    ctx.beginPath(); ctx.moveTo(-70, -80); ctx.bezierCurveTo(-60, -30, -105, 20, -100, 70); ctx.quadraticCurveTo(-95, 100, -60, 100); ctx.lineTo(60, 100); ctx.quadraticCurveTo(95, 100, 100, 70); ctx.bezierCurveTo(105, 20, 60, -30, 70, -80); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-74, -78); ctx.lineTo(-112, -98); ctx.lineTo(-62, -96); ctx.lineTo(78, -96); ctx.lineTo(82, -78); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#F6C690'; ctx.fillRect(-72, -98, 152, 6);
+    ctx.fillStyle = 'rgba(255,230,190,.5)'; ctx.beginPath(); ctx.ellipse(-30, 30, 14, 50, 0.1, 0, 7); ctx.fill();
+    ctx.restore();
+    // frozen stream + droplets
+    ctx.save();
+    const sx = 690, sy = 1052;
+    const sg2 = ctx.createLinearGradient(sx, sy, 470, 1250); sg2.addColorStop(0, 'rgba(120,66,30,.97)'); sg2.addColorStop(1, 'rgba(70,36,14,.97)');
+    ctx.strokeStyle = sg2; ctx.lineWidth = 14; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(560, 1070, 482, 1282); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,220,180,.6)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx - 6, sy - 4); ctx.quadraticCurveTo(556, 1062, 477, 1276); ctx.stroke();
+    const dr = rng(77);
+    for (let i = 0; i < 26; i++) {
+      const a = dr() * 6.28, d = 40 + dr() * 120, r0 = 3 + dr() * 9;
+      const x = 482 + Math.cos(a) * d * 1.1, y = 1250 + Math.sin(a) * d * .5 - 40 + Math.sin(t * 2 + i) * 1.2;
+      const g = ctx.createRadialGradient(x - r0 * .3, y - r0 * .3, 0, x, y, r0); g.addColorStop(0, 'rgba(255,235,210,.95)'); g.addColorStop(.45, 'rgba(130,72,32,.92)'); g.addColorStop(1, 'rgba(60,30,12,.5)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r0, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+    // coffee cup (fenjan) on a saucer
+    ctx.save();
+    ctx.fillStyle = '#E9EDF2'; ctx.beginPath(); ctx.ellipse(482, 1388, 105, 16, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#C9D1DA'; ctx.beginPath(); ctx.ellipse(482, 1384, 70, 9, 0, 0, 7); ctx.fill();
+    const cg = ctx.createLinearGradient(420, 0, 545, 0); cg.addColorStop(0, '#C7CFD8'); cg.addColorStop(.4, '#FFFFFF'); cg.addColorStop(1, '#AEB8C4');
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(420, 1290); ctx.bezierCurveTo(422, 1350, 450, 1382, 482, 1382); ctx.bezierCurveTo(514, 1382, 542, 1350, 544, 1290); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#E2E8EF'; ctx.lineWidth = 9; ctx.beginPath(); ctx.arc(552, 1322, 20, -1.3, 1.3); ctx.stroke();
+    ctx.fillStyle = '#3B1F0E'; ctx.beginPath(); ctx.ellipse(482, 1292, 62, 11, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(196,140,90,.75)'; ctx.beginPath(); ctx.ellipse(486, 1291, 40, 6, 0, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#D4A64A'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(482, 1290, 63, 12, 0, Math.PI, 2 * Math.PI); ctx.stroke();
+    ctx.strokeStyle = '#D4A64A'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(424, 1318); ctx.bezierCurveTo(450, 1326, 514, 1326, 540, 1318); ctx.stroke();
+    ctx.restore();
+    // frozen steam
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+    for (let k = 0; k < 3; k++) { ctx.beginPath(); for (let i = 0; i <= 20; i++) { const y = 1265 - i * 9, x = 440 + k * 30 + Math.sin(i * .5 + k) * 12; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
+    ctx.restore();
+    // phone on stand
+    ctx.fillStyle = '#0A1220'; rr(ctx, 650, 1080, 210, 320, 26); ctx.fill();
+    ctx.fillStyle = '#2A3442'; ctx.fillRect(700, 1398, 110, 10);
+  });
+
+  // dust motes, frozen in the air
+  ctx.save(); const dr2 = rng(91); ctx.fillStyle = '#FFE9C7';
+  for (let i = 0; i < 90; i++) { const x = dr2() * 1080, y = 300 + dr2() * 1200, s = dr2() * 3 + 1; ctx.globalAlpha = .18 + dr2() * .35; ctx.beginPath(); ctx.arc(x + 25 * p * dr2(), y + Math.sin(t * 1.5 + i) * .8, s, 0, 7); ctx.fill(); }
+  ctx.restore();
+
+  // time-freeze grade: pull colour out of the world…
+  ctx.save(); ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = 'rgba(128,128,128,.55)'; ctx.fillRect(-600, -600, W + 1200, H + 1200);
+  ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = 'rgba(20,60,110,.16)'; ctx.fillRect(-600, -600, W + 1200, H + 1200); ctx.restore();
+
+  // …except what the internet touches: router LEDs and the phone screen
+  layer(30, () => {
+    const blink = (Math.sin(t * 18) > 0) ? 1 : .35;
+    [[905, 734], [925, 734], [945, 734]].forEach(([x, y], i) => { ctx.fillStyle = i === 2 ? `rgba(80,190,30,${blink})` : C.green; ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); });
+    headGlow(925, 734, 70, .55);
+  });
+  layer(-45, () => {
+    ctx.save(); rr(ctx, 662, 1094, 186, 292, 18); ctx.clip();
+    const sg = ctx.createLinearGradient(662, 1094, 848, 1300);
+    sg.addColorStop(0, '#0A2E5C'); sg.addColorStop(1, '#0B4D3A'); ctx.fillStyle = sg; ctx.fillRect(662, 1094, 186, 292);
+    // "video" playing — moving bands
+    for (let i = 0; i < 6; i++) { ctx.fillStyle = `hsla(${150 + i * 18},70%,55%,.35)`; ctx.beginPath(); ctx.ellipse(755 + Math.sin(t * 3 + i) * 50, 1180 + Math.cos(t * 2.4 + i * 1.3) * 40, 60, 26, t + i, 0, 7); ctx.fill(); }
+    ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.moveTo(742, 1160); ctx.lineTo(742, 1200); ctx.lineTo(774, 1180); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(676, 1262, 158, 5);
+    ctx.fillStyle = C.green; ctx.fillRect(676, 1262, 158 * ((t * .18) % 1), 5);
+    // download bar fills instantly
+    const dl = eoutExpo(seg(t, 2.65, 3.25));
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(ctx, 676, 1300, 158, 16, 8); ctx.fill();
+    ctx.fillStyle = C.green; rr(ctx, 676, 1300, Math.max(16, 158 * dl), 16, 8); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `700 26px ${BODY}`; ctx.textAlign = 'center'; ctx.direction = 'ltr';
+    ctx.fillText(dl >= 1 ? '✓ 100%' : Math.round(dl * 100) + '%', 755, 1352);
+    ctx.restore();
+    const sgl = ctx.createRadialGradient(755, 1240, 20, 755, 1300, 330); sgl.addColorStop(0, 'rgba(95,227,255,.28)'); sgl.addColorStop(1, 'rgba(95,227,255,0)');
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = sgl; ctx.fillRect(400, 950, 700, 700); ctx.restore();
+  });
+  ctx.restore();
+
+  // headline (screen space, safe zone)
+  ctx.save(); const tg2 = ctx.createLinearGradient(0, 250, 0, 620); tg2.addColorStop(0, 'rgba(2,10,22,.0)'); tg2.addColorStop(.5, 'rgba(2,10,22,.45)'); tg2.addColorStop(1, 'rgba(2,10,22,0)');
+  ctx.globalAlpha = seg(t, 0, .4) * (1 - seg(t, 4.2, 4.6)); ctx.fillStyle = tg2; ctx.fillRect(0, 250, W, 370); ctx.restore();
+  words('ليش كل شي واقف؟', W / 2, 430, 96, t, 0.15, 2.15);
+  words('إلا سرعتك…', W / 2, 430, 120, t, 2.55, 4.15, { color: C.green, stagger: .16 });
+  flash(einExpo(seg(t, 4.6, 5.0)) * .95);
+}
+
+// ================= SCENE 2 — out of the window, up to the dish (5–8s) =================
+function scene2(t) {
+  const u = t - 5;
+  sky('#020B18', '#0A2748', u);
+  moon(820, 330, 34);
+  const pull = eout(seg(u, 0, 1.7));
+  const z = lerp(2.4, 1, pull);
+  const fy = lerp(1300, 980, eio(seg(u, 0.3, 2.2)));
+  ctx.save(); ctx.translate(W / 2, H * .55); ctx.scale(z, z); ctx.translate(-540, -fy);
+  // neighbours
+  skyline(1500, 0, 44, '#06172C', 300, 700, .3);
+  // our building
+  const bx = 290, bw = 500, top = 760;
+  const bg = ctx.createLinearGradient(bx, 0, bx + bw, 0); bg.addColorStop(0, '#1A2638'); bg.addColorStop(1, '#253247');
+  ctx.fillStyle = bg; ctx.fillRect(bx, top, bw, 1400);
+  ctx.fillStyle = '#0F1A2A'; ctx.fillRect(bx - 12, top - 14, bw + 24, 18);
+  for (let row = 0; row < 6; row++) for (let col = 0; col < 3; col++) {
+    const wx = bx + 50 + col * 155, wy = top + 80 + row * 200;
+    const ours = row === 2 && col === 1;
+    ctx.fillStyle = ours ? '#FFD38A' : ((row * 3 + col) % 4 === 0 ? '#E8A55A' : '#0B1626');
+    ctx.fillRect(wx, wy, 90, 120);
+    ctx.fillStyle = '#0F1A2A'; ctx.fillRect(wx - 8, wy + 120, 106, 10);
+  }
+  // water tanks + dish on the roof
+  for (const x of [340, 420]) { ctx.fillStyle = '#2B3F5C'; rr(ctx, x, top - 70, 52, 58, 8); ctx.fill(); }
+  const dishX = 650, dishY = top - 210;
+  panelAntenna(ctx, dishX, dishY, 1.25, seg(u, 1.1, 1.3));
+  // thread: window → up the façade → dish
+  const win = [bx + 50 + 155 + 45, top + 80 + 400 + 60];
+  const path1 = [];
+  const N = 60;
+  for (let i = 0; i <= N; i++) {
+    const q = i / N;
+    path1.push([lerp(win[0], dishX, smooth(q)) + Math.sin(q * 9) * 26 * (1 - q), lerp(win[1], dishY, q)]);
+  }
+  const pr = eio(seg(u, 0.15, 1.15));
+  const vis = path1.slice(0, Math.max(2, Math.round(pr * N)));
+  if (pr > 0) { thread(vis, 9); const h = vis[vis.length - 1]; headGlow(h[0], h[1], 80); }
+  const dishHit = seg(u, 1.15, 1.35) * (1 - seg(u, 1.6, 2.4));
+  headGlow(dishX - 85, dishY + 15, 130, dishHit);
+  // beam from the dish to the horizon
+  const pr2 = eoutExpo(seg(u, 1.3, 2.3));
+  if (pr2 > 0) {
+    const end = [lerp(dishX, -900, pr2), lerp(dishY, 120, pr2)];
+    const pts = []; for (let i = 0; i <= 30; i++) { const q = i / 30; pts.push([lerp(dishX, end[0], q), lerp(dishY, end[1], q) - Math.sin(q * Math.PI) * 120]); }
+    thread(pts, 8);
+    headGlow(end[0], end[1] - 0, 90);
+  }
+  ctx.restore();
+  // whip-pan into the flyover
+  const whip = seg(u, 2.55, 3.0);
+  if (whip > 0) { ctx.save(); ctx.globalAlpha = whip; ctx.fillStyle = '#04152B'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  flash((1 - seg(u, 0, 0.35)) * .9);
+}
+
+// ================= SCENE 3 — flyover Homs (8–15s) =================
+const ORB_A = 3.9, ORB_B = 5.0, XC = 380 - 360 * ORB_A + 90, CLOCK_Y = 820;
+function headAt(s) {
+  let x = 380 - 360 * s, y = 900 + 110 * Math.sin(1.4 * s), front = 1;
+  if (s >= ORB_A && s <= ORB_B) {
+    const q = (s - ORB_A) / (ORB_B - ORB_A);
+    const ph = -Math.PI / 2 + q * Math.PI * 3;
+    x = XC + 95 * Math.sin(ph);
+    const yo = lerp(720, 980, q);
+    const bl = smooth(clamp(q * 4)) * smooth(clamp((1 - q) * 4));
+    y = lerp(y, yo + 22 * Math.cos(ph), bl);
+    front = Math.cos(ph) > 0 ? 1 : 0;
+  } else if (s > ORB_B) {
+    const off = (XC + 95) - (380 - 360 * ORB_B);
+    x += off * (1 - eio(seg(s, ORB_B, ORB_B + 1.3)));
+  }
+  return [x, y, front];
+}
+function mosque(x, base) {
+  ctx.save(); ctx.fillStyle = '#0B2442';
+  ctx.fillRect(x - 260, base - 230, 520, 400);
+  // main dome + side domes
+  const dome = (cx, cy, r) => { ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.bezierCurveTo(cx - r, cy - r * 1.05, cx - r * .2, cy - r * 1.25, cx, cy - r * 1.45); ctx.bezierCurveTo(cx + r * .2, cy - r * 1.25, cx + r, cy - r * 1.05, cx + r, cy); ctx.fill(); ctx.fillRect(cx - 3, cy - r * 1.45 - 26, 6, 26); };
+  dome(x, base - 230, 120); dome(x - 175, base - 230, 62); dome(x + 175, base - 230, 62);
+  // two pencil minarets
+  for (const mx of [x - 290, x + 290]) {
+    ctx.fillRect(mx - 20, base - 640, 40, 800);
+    ctx.fillRect(mx - 30, base - 520, 60, 16);
+    ctx.beginPath(); ctx.moveTo(mx - 22, base - 640); ctx.lineTo(mx, base - 780); ctx.lineTo(mx + 22, base - 640); ctx.fill();
+    ctx.fillStyle = 'rgba(240,240,255,.10)'; for (let k = 0; k < 12; k++) ctx.fillRect(mx - 20, base - 600 + k * 40, 40, 12); ctx.fillStyle = '#0B2442';
+  }
+  // ablaq stripes + arches lit softly
+  ctx.fillStyle = 'rgba(255,255,255,.07)'; for (let k = 0; k < 8; k++) ctx.fillRect(x - 260, base - 220 + k * 26, 520, 10);
+  ctx.fillStyle = 'rgba(255,200,120,.55)';
+  for (let k = 0; k < 5; k++) { const ax = x - 200 + k * 100; ctx.beginPath(); ctx.moveTo(ax - 22, base - 20); ctx.lineTo(ax - 22, base - 90); ctx.quadraticCurveTo(ax, base - 130, ax + 22, base - 90); ctx.lineTo(ax + 22, base - 20); ctx.fill(); }
+  ctx.restore();
+}
+function clockTower(x, u) {
+  ctx.save(); ctx.fillStyle = '#0D2747';
+  ctx.fillRect(x - 70, CLOCK_Y - 120, 140, 1200);
+  ctx.fillRect(x - 86, CLOCK_Y - 132, 172, 18); ctx.fillRect(x - 86, CLOCK_Y + 100, 172, 16);
+  ctx.beginPath(); ctx.moveTo(x - 80, CLOCK_Y - 132); ctx.lineTo(x - 40, CLOCK_Y - 220); ctx.lineTo(x + 40, CLOCK_Y - 220); ctx.lineTo(x + 80, CLOCK_Y - 132); ctx.fill();
+  ctx.fillRect(x - 6, CLOCK_Y - 280, 12, 62);
+  // face — ticks until the thread wraps it, then freezes
+  const g = ctx.createRadialGradient(x, CLOCK_Y, 10, x, CLOCK_Y, 64); g.addColorStop(0, '#FFF6DE'); g.addColorStop(1, '#E7CF95');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, CLOCK_Y, 58, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#3A2A10'; ctx.lineWidth = 3; for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * 46, CLOCK_Y + Math.sin(a) * 46); ctx.lineTo(x + Math.cos(a) * 54, CLOCK_Y + Math.sin(a) * 54); ctx.stroke(); }
+  const sec = Math.floor(Math.min(u, 4.2) * 2) * (Math.PI / 30);
+  const hand = (a, l, w, c) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, CLOCK_Y); ctx.lineTo(x + Math.sin(a) * l, CLOCK_Y - Math.cos(a) * l); ctx.stroke(); };
+  hand(1.2, 28, 6, '#2A1C08'); hand(4.6, 42, 4, '#2A1C08'); hand(sec, 48, 2, '#C0392B');
+  ctx.restore();
+}
+function scene3(t) {
+  const u = t - 8;
+  const tilt = eio(seg(u, 5.9, 7.0));
+  ctx.save(); ctx.translate(0, tilt * 900);
+  sky('#020A16', '#0B2C52', u);
+  moon(860 + u * 6, 300, 40);
+  skyline(1300, -u * 60, 61, '#06162A', 120, 360, .12);
+  skyline(1400, -u * 170, 62, '#081D36', 160, 460, .2);
+  // mid layer with landmarks (360 px/s)
+  const mid = 360 * u;
+  skyline(1560, -mid, 63, '#0A2242', 180, 520, .25);
+  mosque(-180 + mid, 1500);
+  const clockX = XC + mid;
+  // thread trail (back part behind the tower)
+  const trail = [];
+  for (let s = Math.max(0, u - 2.6); s <= u; s += 1 / 60) { const [x, y, f] = headAt(s); trail.push([x + mid, y, f, (s - (u - 2.6)) / 2.6]); }
+  const drawTrail = wantFront => {
+    let run = [];
+    const flush = () => { if (run.length > 1) thread(run, 10, 1); run = []; };
+    for (const pnt of trail) { if (pnt[2] === wantFront || wantFront === 2) run.push(pnt); else flush(); }
+    flush();
+  };
+  drawTrail(0);
+  clockTower(clockX, u);
+  drawTrail(1);
+  const [hx, hy] = headAt(u);
+  headGlow(hx + mid, hy, 110);
+  // sparks behind the head
+  const sr = rng(Math.floor(u * 30) + 9);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 26; i++) { const s = u - sr() * 1.2; const [x, y] = headAt(Math.max(0, s)); ctx.fillStyle = `rgba(190,255,140,${.6 * sr()})`; ctx.beginPath(); ctx.arc(x + mid + (sr() - .5) * 40, y + (sr() - .5) * 40, sr() * 3 + 1, 0, 7); ctx.fill(); }
+  ctx.restore();
+  // near rooftops (fastest)
+  const off = ((600 * u) % 4200);
+  ctx.drawImage(ROOF, -4200 + off + 1080, 1400); ctx.drawImage(ROOF, off - 4200 + 1080 - 4200, 1400); ctx.drawImage(ROOF, off + 1080 - 4200 + 4200, 1400);
+  ctx.fillStyle = '#050F1E'; ctx.fillRect(0, 1918, W, 2000);
+  ctx.restore();
+  words('من قلب حمص', W / 2, 420, 118, t, 8.55, 11.0);
+  words('لكل بيت', W / 2, 420, 118, t, 11.5, 13.4, { color: C.green });
+  ctx.save(); ctx.globalAlpha = tilt; ctx.fillStyle = '#04152B'; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+
+// ================= SCENE 4 — Homs lights up (15–25s) + SCENE 5 logo (25–30s) =================
+function mapCam(t) {
+  const p = eio(seg(t, 15, 17.6)), pb = eio(seg(t, 17.6, 24.8));
+  const p2 = eio(seg(t, 25, 27));
+  return { z: lerp(lerp(lerp(2.0, 0.66, p), 0.56, pb), 0.42, p2), rot: lerp(-0.22, 0.05, eio(seg(t, 15, 24.5))) };
+}
+function toScreen(x, y, cam) {
+  const dx = (x - MW / 2) * cam.z, dy = (y - MH / 2) * cam.z, c = Math.cos(cam.rot), s = Math.sin(cam.rot);
+  return [W / 2 + dx * c - dy * s, H * .5 + dx * s + dy * c];
+}
+function scene4(t, fade = 1) {
+  const cam = mapCam(t);
+  ctx.fillStyle = '#030D1A'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = fade;
+  ctx.translate(W / 2, H * .5); ctx.rotate(cam.rot); ctx.scale(cam.z, cam.z); ctx.translate(-MW / 2, -MH / 2);
+  ctx.drawImage(MAP, 0, 0);
+  // coverage reveal: lit city clipped by growing circles
+  ctx.save(); ctx.beginPath();
+  const cR = 340 * eout(seg(t, 15.2, 16.2));
+  if (cR > 0) ctx.arc(MW / 2, MH / 2, cR, 0, 7);
+  for (const n of NODES) { const r = (n.big ? 330 : 300) * eout(seg(t, n.t, n.t + 0.9)); if (r > 0) { ctx.moveTo(n.x + r, n.y); ctx.arc(n.x, n.y, r, 0, 7); } }
+  ctx.clip(); ctx.drawImage(MAPLIT, 0, 0); ctx.restore();
+  // links from Al-Qusour
+  ctx.lineCap = 'round';
+  for (const n of NODES) {
+    const lp = eio(seg(t, n.t - 0.5, n.t));
+    if (lp <= 0) continue;
+    const mx = (MW / 2 + n.x) / 2 + (n.y - MH / 2) * .18, my = (MH / 2 + n.y) / 2 - (n.x - MW / 2) * .18;
+    const pts = []; for (let i = 0; i <= 24 * lp; i++) { const q = i / 24; pts.push([(1 - q) * (1 - q) * MW / 2 + 2 * (1 - q) * q * mx + q * q * n.x, (1 - q) * (1 - q) * MH / 2 + 2 * (1 - q) * q * my + q * q * n.y]); }
+    ctx.save(); ctx.strokeStyle = 'rgba(140,255,90,.85)'; ctx.lineWidth = 4 / cam.z * .6; ctx.shadowColor = C.green; ctx.shadowBlur = 20;
+    ctx.beginPath(); pts.forEach((pp, i) => i ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1])); ctx.stroke(); ctx.restore();
+    // data pulses
+    if (lp >= 1) for (let k = 0; k < 2; k++) {
+      const q = ((t * .7 + k * .5 + n.x * .001) % 1);
+      const x = (1 - q) * (1 - q) * MW / 2 + 2 * (1 - q) * q * mx + q * q * n.x, y = (1 - q) * (1 - q) * MH / 2 + 2 * (1 - q) * q * my + q * q * n.y;
+      ctx.fillStyle = '#EFFFE0'; ctx.beginPath(); ctx.arc(x, y, 5 / cam.z * .7, 0, 7); ctx.fill();
+    }
+    // node + ripple
+    const np = seg(t, n.t, n.t + 1.2);
+    if (np > 0) {
+      ctx.save(); ctx.strokeStyle = `rgba(160,255,110,${1 - np})`; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(n.x, n.y, 20 + np * 220, 0, 7); ctx.stroke(); ctx.restore();
+      ctx.fillStyle = C.green; ctx.shadowColor = C.green; ctx.shadowBlur = 30; ctx.beginPath(); ctx.arc(n.x, n.y, n.big ? 16 : 11, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(n.x, n.y, n.big ? 6 : 4, 0, 7); ctx.fill();
+    }
+  }
+  ctx.restore();
+  // Al-Qusour pin (screen space so it stays readable)
+  const [px, py] = toScreen(MW / 2, MH / 2, cam);
+  const pinA = seg(t, 15.3, 15.8) * fade;
+  if (pinA > 0) {
+    ctx.save(); ctx.globalAlpha = pinA;
+    const pulse = (t * 1.2) % 1;
+    ctx.strokeStyle = `rgba(80,190,30,${1 - pulse})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(px, py, 20 + pulse * 70, 0, 7); ctx.stroke();
+    ctx.fillStyle = C.green; ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.arc(px, py - 70, 34, Math.PI * .8, Math.PI * .2); ctx.lineTo(px, py - 8); ctx.closePath(); ctx.fill();
+    ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px, py - 72, 13, 0, 7); ctx.fill();
+    ctx.font = `700 46px ${DISPLAY}`; ctx.textAlign = 'center'; ctx.direction = 'rtl'; ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 16; ctx.fillText('القصور', px, py + 60);
+    ctx.restore();
+  }
+  for (const n of NODES) {
+    if (!n.name) continue;
+    const a = eout(seg(t, n.t + .05, n.t + .45)) * fade;
+    if (a <= 0) continue;
+    const [sx, sy] = toScreen(n.x, n.y, cam);
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.font = `700 44px ${DISPLAY}`; ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(n.name).width + 44;
+    const x = clamp(sx, w / 2 + 24, W - w / 2 - 24), y = sy - 58 + (1 - a) * 18;
+    ctx.fillStyle = 'rgba(2,20,40,.78)'; rr(ctx, x - w / 2, y - 34, w, 68, 34); ctx.fill();
+    ctx.strokeStyle = 'rgba(80,190,30,.9)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.fillText(n.name, x, y + 2);
+    ctx.restore();
+  }
+  { const a = seg(t, 15.8, 16.4) * (t < 25 ? 1 : 1 - seg(t, 25, 25.5));
+    ctx.save(); ctx.globalAlpha = a; const g = ctx.createLinearGradient(0, 180, 0, 640); g.addColorStop(0, 'rgba(2,12,26,0)'); g.addColorStop(.45, 'rgba(2,12,26,.82)'); g.addColorStop(1, 'rgba(2,12,26,0)'); ctx.fillStyle = g; ctx.fillRect(0, 180, W, 460); ctx.restore(); }
+  words('تغطية بتوصل لحارتك', W / 2, 380, 86, t, 16.2, 22.4);
+  words('سرعة ما بتوقف', W / 2, 380, 112, t, 22.7, 24.6, { color: C.green });
+}
+// dome path in screen space (logo-like ogee dome)
+function domePath(cx, by, w, h) {
+  return [[cx - w / 2, by], [cx - w / 2, by - h * .35, cx - w * .32, by - h * .92, cx, by - h], [cx + w * .32, by - h * .92, cx + w / 2, by - h * .35, cx + w / 2, by]];
+}
+function sampleDome(cx, by, w, h, n) {
+  const [p0, c1, c2] = domePath(cx, by, w, h); const pts = [];
+  const bez = (a, b, c, d, q) => (1 - q) ** 3 * a + 3 * (1 - q) ** 2 * q * b + 3 * (1 - q) * q * q * c + q ** 3 * d;
+  for (let i = 0; i <= n; i++) { const q = i / n; pts.push([bez(p0[0], c1[0], c1[2], c1[4], q), bez(p0[1], c1[1], c1[3], c1[5], q)]); }
+  for (let i = 1; i <= n; i++) { const q = i / n; pts.push([bez(c1[4], c2[0], c2[2], c2[4], q), bez(c1[5], c2[1], c2[3], c2[5], q)]); }
+  return pts;
+}
+function scene5(t) {
+  const u = t - 25;
+  const mapFade = 1 - eio(seg(u, 0.2, 1.4));
+  scene4(t, mapFade);
+  // dark glow ground
+  ctx.save(); ctx.globalAlpha = 1 - mapFade;
+  const bg = ctx.createRadialGradient(W / 2, 800, 50, W / 2, 900, 1100); bg.addColorStop(0, '#0B3A3A'); bg.addColorStop(.45, '#04203E'); bg.addColorStop(1, '#020A16');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H); ctx.restore();
+  const cam = mapCam(t);
+  const CX = 540, BY = 900, DW = 470, DH = 300;
+  // threads converge from nodes to the dome base
+  const cv1 = eio(seg(u, 0, 1.0));
+  if (cv1 > 0 && u < 1.35) {
+    const sel = NODES.filter(n => n.big);
+    sel.forEach((n, i) => {
+      const [sx, sy] = toScreen(n.x, n.y, cam);
+      const tx = CX + (i - 3.5) * 20, ty = BY - 40;
+      const pts = []; const k = Math.round(30 * cv1);
+      for (let j = 0; j <= k; j++) { const q = j / 30; pts.push([lerp(sx, tx, q), lerp(sy, ty, q) - Math.sin(q * Math.PI) * 180]); }
+      thread(pts, 6, 1 - seg(u, 1.0, 1.35));
+    });
+  }
+  // dome drawn by the light
+  const dp = eio(seg(u, 0.95, 1.75));
+  const vecA = 1 - eio(seg(u, 2.45, 2.9));
+  if (dp > 0 && vecA > 0) {
+    ctx.save(); ctx.globalAlpha = vecA;
+    const pts = sampleDome(CX, BY, DW, DH, 60); const k = Math.max(2, Math.round(pts.length * dp));
+    // fill grows in
+    const fp = seg(u, 1.6, 1.95);
+    if (fp > 0) {
+      ctx.save(); ctx.globalAlpha = fp; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath();
+      const g = ctx.createLinearGradient(0, BY - DH, 0, BY); g.addColorStop(0, '#7BE04A'); g.addColorStop(1, '#3E9F14'); ctx.fillStyle = g; ctx.shadowColor = C.green; ctx.shadowBlur = 60; ctx.fill(); ctx.restore();
+    }
+    // draw from both ends toward the top, like the logo is being built
+    const half = Math.floor(pts.length / 2);
+    const a = pts.slice(0, Math.max(2, Math.round(half * dp) + 1)), b = pts.slice(pts.length - Math.max(2, Math.round(half * dp) + 1)).reverse();
+    thread(a, 9, 1 - fp * .6); thread(b, 9, 1 - fp * .6);
+    // roof band under the dome
+    const rp = eout(seg(u, 1.7, 2.1));
+    if (rp > 0) {
+      ctx.save(); ctx.fillStyle = C.white; ctx.globalAlpha = rp;
+      const w2 = (DW / 2 + 30) * rp;
+      ctx.beginPath(); ctx.moveTo(CX - w2, BY + 30); ctx.lineTo(CX, BY + 6); ctx.lineTo(CX + w2, BY + 30); ctx.lineTo(CX + w2, BY + 50); ctx.lineTo(CX, BY + 26); ctx.lineTo(CX - w2, BY + 50); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    // finial + crescent — the hit
+    const cp = seg(u, 1.95, 2.05);
+    if (cp > 0) {
+      ctx.save(); ctx.fillStyle = C.green; ctx.shadowColor = '#B6FF8A'; ctx.shadowBlur = 40 + 60 * (1 - seg(u, 2.0, 2.8));
+      ctx.fillRect(CX - 5, BY - DH - 60, 10, 62);
+      ctx.beginPath(); ctx.arc(CX, BY - DH - 70, 14, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(CX + 22, BY - DH - 146, 38, 0, 7); ctx.clip('evenodd');
+      ctx.beginPath(); ctx.arc(CX + 4, BY - DH - 128, 42, 0, 7); ctx.fill();
+      ctx.restore();
+      const sw = seg(u, 2.0, 2.9);
+      ctx.save(); ctx.strokeStyle = `rgba(190,255,150,${(1 - sw) * .9})`; ctx.lineWidth = 10 * (1 - sw) + 1; ctx.beginPath(); ctx.arc(CX, BY - 150, 60 + sw * 900, 0, 7); ctx.stroke(); ctx.restore();
+    }
+    ctx.restore();
+  }
+  flash((1 - seg(u, 2.0, 2.45)) * seg(u, 1.97, 2.0) * .8);
+  // swap to the real logo
+  const lg = eio(seg(u, 2.45, 3.05));
+  if (lg > 0) {
+    const s = lerp(.86, 1, eout(lg)), R = 300 * s;
+    ctx.save(); ctx.globalAlpha = lg;
+    const gg = ctx.createRadialGradient(CX, 760, R * .8, CX, 760, R * 1.7); gg.addColorStop(0, 'rgba(80,190,30,.35)'); gg.addColorStop(1, 'rgba(80,190,30,0)');
+    ctx.fillStyle = gg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(CX, 760, R * .99, 0, 7); ctx.fill();
+    ctx.drawImage(IMG.logo, CX - R, 760 - R, 2 * R, 2 * R);
+    ctx.restore();
+  }
+  words('كل شي بيوقف…', W / 2, 1220, 98, t, 27.55, 29.6);
+  words('إلا سرعتك', W / 2, 1360, 132, t, 28.1, 29.6, { color: C.green, stagger: .2 });
+  flash(einExpo(seg(u, 4.65, 5.0)) * .9);
+}
+
+// ================= SCENE 6 — card + numbers, loops back (30–35s) =================
+let FIRST = null;
+function scene6(t) {
+  const u = t - 30;
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#022B57'); bg.addColorStop(1, '#011A36');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  // light streaks
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 6; i++) { const y = ((i * 340 + u * 160) % 2400) - 300; const g = ctx.createLinearGradient(0, y, W, y - 500); g.addColorStop(0, 'rgba(80,190,30,0)'); g.addColorStop(.5, 'rgba(80,190,30,.10)'); g.addColorStop(1, 'rgba(80,190,30,0)'); ctx.strokeStyle = g; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y - 500); ctx.stroke(); }
+  const pr = rng(4); for (let i = 0; i < 60; i++) { ctx.fillStyle = `rgba(180,255,140,${pr() * .4})`; ctx.beginPath(); ctx.arc(pr() * W, (pr() * H - u * 30 * (pr() + .3) + H) % H, pr() * 2.5 + .5, 0, 7); ctx.fill(); }
+  ctx.restore();
+
+  words('إنترنت هوائي · سرعة وتغطية', W / 2, 380, 62, t, 30.35, 34.2, { stagger: .08 });
+
+  // card spin-in
+  const sp = eout(seg(u, 0, 1.35));
+  const ang = lerp(Math.PI * 1.15, 0, sp) + Math.sin(u * 1.4) * .04 * sp;
+  const cw = 900, ch = cw * IMG.card.height / IMG.card.width;
+  const cy = lerp(1150, 790, sp) + Math.sin(u * 1.8) * 6;
+  ctx.save();
+  ctx.translate(540, cy);
+  // shadow
+  ctx.save(); ctx.globalAlpha = .5 * sp; ctx.fillStyle = '#000'; ctx.filter = 'blur(30px)'; ctx.beginPath(); ctx.ellipse(0, ch / 2 + 70, cw * .42 * Math.abs(Math.cos(ang)) + 40, 26, 0, 0, 7); ctx.fill(); ctx.restore();
+  const sx = Math.cos(ang), sk = Math.sin(ang) * .14;
+  ctx.transform(sx, sk, 0, 1, 0, 0);
+  ctx.globalAlpha = seg(u, 0, .25);
+  ctx.save(); rr(ctx, -cw / 2, -ch / 2, cw, ch, 22); ctx.clip();
+  if (sx >= 0) ctx.drawImage(IMG.card, -cw / 2, -ch / 2, cw, ch);
+  else { ctx.fillStyle = C.navy; ctx.fillRect(-cw / 2, -ch / 2, cw, ch); ctx.save(); ctx.scale(-1, 1); ctx.drawImage(IMG.logo, -170, -170, 340, 340); ctx.restore(); }
+  // sheen sweep
+  const sh = seg(u, 1.35, 2.05);
+  if (sh > 0 && sh < 1) { const x = lerp(-cw, cw, sh); const g = ctx.createLinearGradient(x - 160, -ch / 2, x + 160, ch / 2); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(-cw / 2, -ch / 2, cw, ch); }
+  ctx.restore();
+  ctx.restore();
+
+  // phone numbers
+  const pill = (y, num, ti) => {
+    const p = eback(seg(u, ti, ti + .5)); if (p <= 0) return;
+    ctx.save(); ctx.globalAlpha = clamp(p); ctx.translate(540, y); ctx.scale(lerp(.8, 1, p), lerp(.8, 1, p));
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 30; rr(ctx, -330, -52, 660, 104, 52); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(-260, 0, 36, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(-260, 0, 16, Math.PI * .6, Math.PI * 1.45); ctx.stroke();
+    ctx.fillStyle = C.navy; ctx.font = `700 62px ${BODY}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.direction = 'ltr';
+    ctx.fillText(num, 40, 4);
+    ctx.restore();
+  };
+  pill(1200, '0982 621 531', 1.45);
+  pill(1330, '0986 955 402', 1.65);
+  words('حمص · القصور · خلف جامع حمود الناصر', W / 2, 1450, 44, t, 32.0, 34.2, { weight: 500, font: BODY, stagger: .05 });
+
+  // loop back into the opening frame
+  const lp = eio(seg(u, 4.35, 5.0));
+  if (lp > 0) {
+    ctx.save(); ctx.globalAlpha = lp; const z = lerp(1.25, 1, lp); ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.drawImage(FIRST, -W / 2, -H / 2); ctx.restore();
+  }
+}
+
+// ---------- timeline ----------
+function drawScene(t) {
+  if (t < 5) scene1(t);
+  else if (t < 8) scene2(t);
+  else if (t < 15) { scene3(t); if (t > 14.6) { ctx.save(); ctx.globalAlpha = seg(t, 14.6, 15); scene4(15); ctx.restore(); } }
+  else if (t < 25) scene4(t);
+  else if (t < 30) scene5(t);
+  else scene6(t);
+}
+function post(t) {
+  ctx.drawImage(VIGN, 0, 0);
+  ctx.save(); ctx.globalAlpha = .07; ctx.globalCompositeOperation = 'overlay';
+  const r = rng(Math.floor(t * 30) + 1); const ox = -r() * 512, oy = -r() * 512;
+  for (let x = ox; x < W; x += 512) for (let y = oy; y < H; y += 512) ctx.drawImage(GRAIN, x, y);
+  ctx.restore();
+}
+function render(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H); drawScene(t); post(t); ctx.restore();
+}
+
+window.ready = (async () => {
+  await Promise.all([loadImg('logo', 'assets/logo.webp'), loadImg('card', 'assets/card.webp')]);
+  await Promise.all([
+    document.fonts.load(`700 80px "Readex Pro"`, 'مكة'),
+    document.fonts.load(`700 60px "IBM Plex Sans Arabic"`, 'مكة 0982'),
+    document.fonts.load(`500 40px "IBM Plex Sans Arabic"`, 'حمص'),
+  ]);
+  buildStars(); buildGrain(); buildVignette(); buildMap(); buildRoofs();
+  // pre-render the opening frame for the seamless loop
+  FIRST = mk(W, H); const real = ctx; ctx = FIRST.getContext('2d'); render(0); ctx = real;
+  return true;
+})();
+window.render = render;
+</script>
+</body>
+</html>

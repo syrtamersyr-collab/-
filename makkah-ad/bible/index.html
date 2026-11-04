@@ -1,0 +1,274 @@
+<title>خيط الضوء · مركز مكة</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: production bible — brand header, then a vertical film strip of 9:16 frames beside their shot notes */
+:root{
+  --navy:#02376C; --green:#50BE1E; --cyan:#5FE3FF;
+  --bg:#F3F6FA; --surface:#FFFFFF; --fg:#0B1F38; --muted:#52647A; --line:#D8E0EA;
+  --accent:#02376C; --accent-2:#3A9A12; --chip:#E7F4E0;
+  --display:"Readex Pro","IBM Plex Sans Arabic",Tahoma,sans-serif;
+  --body:"IBM Plex Sans Arabic",Tahoma,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#06111F; --surface:#0C1D33; --fg:#E8EEF6; --muted:#97A8BD; --line:#1D3350;
+  --accent:#8CC4FF; --accent-2:#7ADB4E; --chip:#173A1A; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#06111F; --surface:#0C1D33; --fg:#E8EEF6; --muted:#97A8BD; --line:#1D3350;
+  --accent:#8CC4FF; --accent-2:#7ADB4E; --chip:#173A1A; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.75;direction:rtl}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.3}
+p{margin:0}
+.hero{background:var(--navy);color:#fff}
+.hero .wrap{padding-block:40px 36px;display:grid;grid-template-columns:1fr auto;gap:28px;align-items:center}
+.hero img{width:150px;height:150px;border-radius:50%;background:#fff;padding:6px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:#A9D98F;direction:ltr;text-align:right}
+.hero h1{font-size:clamp(34px,6vw,58px);font-weight:700;margin-top:6px}
+.hero h1 span{color:var(--green)}
+.hero .tag{font-size:19px;margin-top:10px;color:#DCE7F4}
+.specs{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.specs b{font-weight:500;font-size:13px;padding:4px 12px;border:1px solid rgba(255,255,255,.25);border-radius:999px;color:#E9F1FA}
+section{margin-top:52px}
+section>h2{font-size:26px;display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
+section>h2 small{font-family:var(--mono);font-size:12px;color:var(--muted);font-weight:500;direction:ltr}
+.lead{font-size:18px;max-width:68ch}
+.lead strong{color:var(--accent)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:20px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 20px;min-width:0}
+.box h3{font-size:17px;margin-bottom:6px;color:var(--accent)}
+.box p,.box li{color:var(--muted);font-size:15px}
+.box ul{margin:0;padding-inline-start:18px}
+.sw{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.sw div{border-radius:10px;overflow:hidden;border:1px solid var(--line);background:var(--surface)}
+.sw i{display:block;height:64px}
+.sw p{padding:8px 12px;font-size:14px}
+.sw code{font-family:var(--mono);font-size:12px;color:var(--muted);display:block;direction:ltr;text-align:right}
+/* storyboard */
+.shot{display:grid;grid-template-columns:150px 1fr;gap:22px;padding:22px 0;border-top:1px solid var(--line)}
+.shot:first-of-type{border-top:0}
+.frame{width:150px;aspect-ratio:9/16;max-width:100%;border-radius:10px;overflow:hidden;box-shadow:0 6px 20px rgba(2,55,108,.25)}
+.frame svg{width:100%;height:100%;display:block}
+.shot .tc{font-family:var(--mono);font-size:13px;color:var(--accent-2);direction:ltr;text-align:right}
+.shot h3{font-size:21px;margin:2px 0 8px}
+.shot .ost{display:inline-block;background:var(--chip);color:var(--fg);font-family:var(--display);font-weight:600;padding:3px 12px;border-radius:6px;margin-bottom:10px}
+.meta{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:15px}
+.meta dt{color:var(--muted);font-weight:500}
+.meta dd{margin:0;min-width:0}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:15px}
+th,td{text-align:right;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--display);font-weight:600;color:var(--muted);font-size:13px}
+td:first-child{font-family:var(--mono);color:var(--accent-2);white-space:nowrap;direction:ltr;text-align:right}
+tr:last-child td{border-bottom:0}
+.ask{background:var(--surface);border:1px solid var(--line);border-inline-start:4px solid var(--green);border-radius:10px;padding:18px 22px}
+.ask ol{margin:8px 0 0;padding-inline-start:20px}
+.ask li{margin-top:6px}
+.card-img{border-radius:10px;border:1px solid var(--line);margin-top:4px}
+@media (max-width:560px){
+  .hero .wrap{grid-template-columns:1fr}
+  .hero img{width:96px;height:96px;order:-1}
+  .shot{grid-template-columns:104px 1fr;gap:14px}
+  .frame{width:104px}
+}
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <p class="eyebrow">PRODUCTION BIBLE · INSTAGRAM REEL 9:16</p>
+      <h1>خيط <span>الضوء</span></h1>
+      <p class="tag">إعلان الإنترنت الهوائي لمركز مكة للتقنيات، حمص</p>
+      <div class="specs"><b>35 ثانية</b><b>1080×1920</b><b>موسيقى بدون تعليق صوتي</b><b>الرسالة: السرعة + التغطية</b></div>
+    </div>
+    <img src="logo.webp" alt="شعار مركز مكة للتقنيات">
+  </div>
+</header>
+
+<main class="wrap">
+
+<section>
+  <h2>الفكرة <small>CONCEPT</small></h2>
+  <p class="lead">من حي <strong>القصور</strong> في حمص ينطلق خيط ضوء أخضر، ويجري فوق أسطح المدينة حتى يدخل كل بيت. داخل البيت يتجمّد كل شيء: القهوة في الهواء، والولد في منتصف قفزته، وعقارب الساعة. شيء واحد فقط يبقى يتحرك: الإنترنت. ثم ترتفع الكاميرا فنرى أحياء حمص تضيء حياً بعد حي، وتلتقي الخيوط لترسم <strong>قبة الشعار</strong> نفسها.</p>
+  <div class="grid2">
+    <div class="box"><h3>السرعة</h3><p>تظهر بالصورة لا بالأرقام: عالم متجمّد، والإنترنت وحده يتحرك.</p></div>
+    <div class="box"><h3>التغطية</h3><p>تظهر على خريطة حمص الحقيقية، والأحياء تضيء واحداً بعد الآخر بأسمائها.</p></div>
+    <div class="box"><h3>الهوية</h3><p>خيوط الضوء ترسم قبة الشعار وهلاله، فيصير الإعلان امتداداً للعلامة وليس قالباً جاهزاً.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>ألوان الإعلان <small>BRAND PALETTE</small></h2>
+  <div class="sw">
+    <div><i style="background:#02376C"></i><p>كحلي مكة<code>#02376C</code></p></div>
+    <div><i style="background:#50BE1E"></i><p>أخضر القبة: لون خيط الضوء<code>#50BE1E</code></p></div>
+    <div><i style="background:#04152B"></i><p>ليل حمص: خلفية المشاهد<code>#04152B</code></p></div>
+    <div><i style="background:#5FE3FF"></i><p>توهج رقمي (قليل جداً)<code>#5FE3FF</code></p></div>
+    <div><i style="background:#F3F6FA"></i><p>أبيض النصوص<code>#F3F6FA</code></p></div>
+  </div>
+  <div class="grid2">
+    <div class="box"><h3>الخطوط</h3><p>العناوين بخط Readex Pro Bold لأنه قريب من خط «مكة» في الشعار. الأرقام والنصوص الصغيرة بخط IBM Plex Sans Arabic.</p></div>
+    <div class="box"><h3>قاعدة الألوان</h3><p>المشهد 70% ليل كحلي، 20% ضوء أخضر، 10% أبيض. التوهج السماوي فقط على أطراف الخيط وعلى شاشة الجوال.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>الستوري بورد <small>STORYBOARD · 7 SHOTS</small></h2>
+
+  <article class="shot">
+    <div class="frame"><svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2A1E14"/><rect y="110" width="90" height="50" fill="#3A2A1C"/><circle cx="62" cy="40" r="22" fill="#F2B45A" opacity=".18"/><path d="M20 70 q6-12 14-6 l4 8 q-8 2-18-2z" fill="#B88A5A"/><path d="M36 74 q4 10 2 22" stroke="#7FB33A" stroke-width="2.5" fill="none" stroke-dasharray="1 3" stroke-linecap="round"/><rect x="30" y="98" width="16" height="14" rx="3" fill="#C9A27A"/><rect x="58" y="84" width="16" height="28" rx="3" fill="#0B1F38" stroke="#5FE3FF" stroke-width="1"/><rect x="60" y="88" width="12" height="16" fill="#5FE3FF" opacity=".7"/><text x="45" y="148" text-anchor="middle" font-size="7" fill="#fff" font-family="Tahoma">ليش كل شي واقف؟</text></svg></div>
+    <div>
+      <p class="tc">00:00 – 00:02</p>
+      <h3>الافتتاح: القهوة المعلّقة</h3>
+      <span class="ost">«ليش كل شي واقف؟» 👀</span>
+      <dl class="meta">
+        <dt>الصورة</dt><dd>قعدة بيت حمصي ليلاً. القهوة تنسكب من الركوة إلى الفنجان وتتجمّد قطراتها في الهواء. على الطاولة جوال شاشته وحدها تتحرك.</dd>
+        <dt>الكاميرا</dt><dd>لقطة قريبة على القطرات، بعدسة 85mm وعمق ميدان ضحل.</dd>
+        <dt>الصوت</dt><dd>صمت ونغمة منخفضة، وصوت الفيديو الخارج من الجوال فقط.</dd>
+      </dl>
+    </div>
+  </article>
+
+  <article class="shot">
+    <div class="frame"><svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#2A1E14"/><ellipse cx="45" cy="96" rx="34" ry="10" fill="none" stroke="#50BE1E" stroke-width=".8" stroke-dasharray="3 3"/><circle cx="22" cy="78" r="6" fill="#C9A27A"/><rect x="17" y="84" width="10" height="18" rx="3" fill="#6B4E36"/><circle cx="66" cy="74" r="6" fill="#C9A27A"/><rect x="61" y="80" width="10" height="20" rx="3" fill="#2E4A6B"/><circle cx="44" cy="58" r="4" fill="#E35B3A"/><rect x="37" y="112" width="16" height="6" rx="2" fill="#0B1F38"/><rect x="38" y="113" width="14" height="4" fill="#50BE1E"/><text x="45" y="148" text-anchor="middle" font-size="7" fill="#fff" font-family="Tahoma">إلا سرعتك…</text></svg></div>
+    <div>
+      <p class="tc">00:02 – 00:05</p>
+      <h3>دوران حول اللحظة المتجمّدة</h3>
+      <span class="ost">«إلا سرعتك…»</span>
+      <dl class="meta">
+        <dt>الصورة</dt><dd>العائلة متجمّدة: الأب في منتصف ضحكة، والولد معلّق في قفزته وكرته في الهواء. شريط التحميل على الجوال يمتلئ في لحظة.</dd>
+        <dt>الكاميرا</dt><dd>دوران 180° حول المشهد (Bullet time) بحركة ناعمة.</dd>
+        <dt>الصوت</dt><dd>نغمة عود قصيرة، ثم صوت يتصاعد، ثم «بينغ» رقمي عند امتلاء الشريط.</dd>
+      </dl>
+    </div>
+  </article>
+
+  <article class="shot">
+    <div class="frame"><svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#04152B"/><rect x="18" y="30" width="54" height="80" fill="#0B2748" stroke="#1D4C80"/><line x1="45" y1="30" x2="45" y2="110" stroke="#1D4C80"/><line x1="18" y1="70" x2="72" y2="70" stroke="#1D4C80"/><path d="M45 140 C45 110 40 90 60 60 S 80 20 88 4" stroke="#50BE1E" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M45 140 C45 110 40 90 60 60 S 80 20 88 4" stroke="#5FE3FF" stroke-width="1" fill="none" opacity=".8"/><circle cx="45" cy="140" r="5" fill="#50BE1E"/></svg></div>
+    <div>
+      <p class="tc">00:05 – 00:08</p>
+      <h3>الخيط يخرج من النافذة</h3>
+      <dl class="meta">
+        <dt>الصورة</dt><dd>زووم سريع على ضوء جهاز الاستقبال، فيخرج منه خيط ضوء أخضر يتجه إلى النافذة ويخرج منها.</dd>
+        <dt>الكاميرا</dt><dd>الكاميرا تلحق الخيط وتخرج معه دون قطع.</dd>
+        <dt>الصوت</dt><dd><b>بداية الإيقاع</b> مع خروج الضوء، وصوت Whoosh.</dd>
+      </dl>
+    </div>
+  </article>
+
+  <article class="shot">
+    <div class="frame"><svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#04152B"/><circle cx="70" cy="22" r="8" fill="#F3F6FA" opacity=".15"/><g fill="#0B2748"><rect x="0" y="105" width="20" height="55"/><rect x="18" y="95" width="16" height="65"/><rect x="58" y="100" width="18" height="60"/><rect x="74" y="112" width="16" height="48"/></g><path d="M34 160 V92 q11-16 22 0 V160z" fill="#123A6B"/><rect x="31" y="70" width="4" height="40" fill="#123A6B"/><rect x="55" y="70" width="4" height="40" fill="#123A6B"/><path d="M0 60 C25 80 60 50 90 70" stroke="#50BE1E" stroke-width="2.5" fill="none"/><text x="45" y="148" text-anchor="middle" font-size="7" fill="#fff" font-family="Tahoma">من قلب حمص</text></svg></div>
+    <div>
+      <p class="tc">00:08 – 00:15</p>
+      <h3>الطيران فوق حمص</h3>
+      <span class="ost">«من قلب حمص»</span>
+      <dl class="meta">
+        <dt>الصورة</dt><dd>الخيط يطير فوق الأسطح ويمر بمآذن جامع خالد بن الوليد، ثم يلف حول الساعة الجديدة وعقاربها متوقفة، ثم يعود إلى نقطة الإرسال فوق حي القصور.</dd>
+        <dt>الكاميرا</dt><dd>لقطة طيران FPV سريعة، مع تسارع وتباطؤ على كل معلَم.</dd>
+        <dt>الصوت</dt><dd>الموسيقى في أعلى طاقتها، وتكتكة ساعة تتوقف فجأة عند الساعة الجديدة.</dd>
+      </dl>
+    </div>
+  </article>
+
+  <article class="shot">
+    <div class="frame"><svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#04152B"/><path d="M-5 120 C20 100 30 130 55 110 S 85 95 95 100" stroke="#1D4C80" stroke-width="4" fill="none"/><g fill="#50BE1E"><circle cx="45" cy="70" r="5"/></g><g fill="#50BE1E" opacity=".75"><circle cx="22" cy="50" r="4"/><circle cx="70" cy="48" r="4"/><circle cx="25" cy="92" r="4"/><circle cx="68" cy="88" r="4"/></g><g stroke="#50BE1E" stroke-width=".8" opacity=".7"><line x1="45" y1="70" x2="22" y2="50"/><line x1="45" y1="70" x2="70" y2="48"/><line x1="45" y1="70" x2="25" y2="92"/><line x1="45" y1="70" x2="68" y2="88"/></g><g font-size="5" fill="#F3F6FA" font-family="Tahoma" text-anchor="middle"><text x="45" y="81">القصور</text><text x="22" y="43">حي ١</text><text x="70" y="41">حي ٢</text><text x="25" y="103">حي ٣</text><text x="68" y="99">حي ٤</text></g><text x="45" y="148" text-anchor="middle" font-size="6.5" fill="#fff" font-family="Tahoma">تغطية بتوصل لحارتك</text></svg></div>
+    <div>
+      <p class="tc">00:15 – 00:25</p>
+      <h3>حمص تضيء حياً بعد حي</h3>
+      <span class="ost">«تغطية بتوصل لحارتك»</span>
+      <dl class="meta">
+        <dt>الصورة</dt><dd>منظر جوي لخريطة حمص الحقيقية ليلاً. تبدأ من القصور، ثم يضيء كل حي مغطى ويظهر اسمه، وخطوط ضوء تربط الأحياء ببعضها. نهر العاصي يعكس الضوء.</dd>
+        <dt>الكاميرا</dt><dd>صعود عمودي بطيء، ثم ميل خفيف حتى تظهر المدينة كلها.</dd>
+        <dt>الصوت</dt><dd>نغمة قصيرة مع كل حي يضيء، وكل نغمة أعلى من التي قبلها.</dd>
+      </dl>
+    </div>
+  </article>
+
+  <article class="shot">
+    <div class="frame"><svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#04152B"/><g stroke="#50BE1E" stroke-width=".6" opacity=".45" fill="none"><path d="M0 140 Q30 100 45 68"/><path d="M90 140 Q60 100 45 68"/><path d="M0 30 Q30 60 45 68"/><path d="M90 30 Q60 60 45 68"/></g><path d="M22 74 Q22 46 45 40 Q68 46 68 74z" fill="#50BE1E"/><path d="M18 76 L45 70 L72 76 L72 80 L45 74 L18 80z" fill="#F3F6FA"/><path d="M45 40 V30" stroke="#50BE1E" stroke-width="1.5"/><path d="M48 24 a5 5 0 1 1 -6 -3 a4 4 0 1 0 6 3z" fill="#50BE1E"/><text x="45" y="104" text-anchor="middle" font-size="9" font-weight="700" fill="#F3F6FA" font-family="Tahoma">كل شي بيوقف</text><text x="45" y="117" text-anchor="middle" font-size="9" font-weight="700" fill="#50BE1E" font-family="Tahoma">إلا سرعتك</text></svg></div>
+    <div>
+      <p class="tc">00:25 – 00:30</p>
+      <h3>الخيوط ترسم قبة الشعار</h3>
+      <span class="ost">«كل شي بيوقف… إلا سرعتك»</span>
+      <dl class="meta">
+        <dt>الصورة</dt><dd>كل خيوط الأحياء ترتفع وتلتقي في نقطة واحدة، وترسم قوس القبة الخضراء، ثم الخط الكحلي تحتها، ثم يضيء الهلال في آخر لحظة.</dd>
+        <dt>الكاميرا</dt><dd>الكاميرا تثبت، والشعار يتجمّع في المركز.</dd>
+        <dt>الصوت</dt><dd>تصاعد، ثم <b>ضربة قوية</b> لحظة إضاءة الهلال.</dd>
+      </dl>
+    </div>
+  </article>
+
+  <article class="shot">
+    <div class="frame"><svg viewBox="0 0 90 160"><rect width="90" height="160" fill="#02376C"/><g transform="rotate(-8 45 62)"><rect x="14" y="40" width="62" height="38" rx="3" fill="#F3F6FA"/><rect x="14" y="40" width="22" height="38" rx="3" fill="#E1E7EF"/><rect x="36" y="40" width="2" height="38" fill="#50BE1E"/><rect x="40" y="46" width="32" height="5" fill="#02376C"/><rect x="40" y="55" width="26" height="2" fill="#7A8CA3"/><rect x="40" y="60" width="22" height="2" fill="#7A8CA3"/><path d="M19 56 Q19 48 25 46 Q31 48 31 56z" fill="#50BE1E"/></g><rect x="10" y="102" width="70" height="20" rx="10" fill="#F3F6FA"/><text x="45" y="115" text-anchor="middle" font-size="6.5" font-weight="700" fill="#02376C" font-family="Tahoma">0982 621 531</text><text x="45" y="134" text-anchor="middle" font-size="5.5" fill="#F3F6FA" font-family="Tahoma">حمص · القصور · خلف جامع حمود الناصر</text></svg></div>
+    <div>
+      <p class="tc">00:30 – 00:35</p>
+      <h3>الكرت والرقم، ثم العودة للبداية</h3>
+      <span class="ost">0982 621 531 · 0986 955 402</span>
+      <dl class="meta">
+        <dt>الصورة</dt><dd>كرت مركز مكة يدخل ويلف ببطء في الفضاء مع انعكاسات واقعية. تحته الرقمان والعنوان: حمص، القصور، خلف جامع حمود الناصر. بعدها ينطلق خيط من الكرت ويدخل نافذة البيت، فيعود الفيديو للقطة الأولى بسلاسة.</dd>
+        <dt>الكاميرا</dt><dd>Dolly-in بطيء على الكرت.</dd>
+        <dt>الصوت</dt><dd>الموسيقى تهدأ، وتعود جملة العود الأولى.</dd>
+      </dl>
+    </div>
+  </article>
+</section>
+
+<section>
+  <h2>الصوت <small>MUSIC + SFX</small></h2>
+  <div class="tbl"><table>
+    <thead><tr><th>الوقت</th><th>الموسيقى</th><th>المؤثرات</th></tr></thead>
+    <tbody>
+      <tr><td>00:00</td><td>صمت ونغمة منخفضة طويلة</td><td>صوت فيديو خافت من الجوال</td></tr>
+      <tr><td>00:02</td><td>جملة عود قصيرة، ثم صوت متصاعد</td><td>تجمّد زجاجي ناعم، و«بينغ» رقمي</td></tr>
+      <tr><td>00:05</td><td>دخول الإيقاع (120–128 BPM)</td><td>Whoosh مع خروج الخيط</td></tr>
+      <tr><td>00:08</td><td>الذروة، وكل قطعة على ضربة</td><td>تكتكة ساعة تتوقف فجأة</td></tr>
+      <tr><td>00:15</td><td>نغمات تصعد مع الأحياء</td><td>لمعة خفيفة لكل حي</td></tr>
+      <tr><td>00:25</td><td>تصاعد ثم ضربة قوية</td><td>Impact عند إضاءة الهلال</td></tr>
+      <tr><td>00:30</td><td>هدوء وعودة جملة العود</td><td>نفس «بينغ» البداية</td></tr>
+    </tbody>
+  </table></div>
+  <div class="grid2">
+    <div class="box"><h3>النوع</h3><p>إلكتروني سينمائي (Cinematic electronic) مع لمسة عود شامية في البداية والنهاية. بدون أي صوت بشري.</p></div>
+    <div class="box"><h3>المصدر</h3><p>موسيقى مرخّصة فقط، لأن حسابات الشركات على إنستغرام لا تستطيع استخدام الأغاني الرائجة. مجاناً: Meta Sound Collection أو Pixabay Music. باشتراك: Artlist أو Epidemic Sound.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>التنفيذ التقني <small>TECH SPEC</small></h2>
+  <div class="grid2">
+    <div class="box"><h3>البرامج</h3><ul><li>Blender: مدينة حمص 3D فوق خريطة حقيقية، ومحاكاة سائل القهوة</li><li>After Effects: خيط الضوء والجزيئات والنصوص</li><li>DaVinci Resolve: التلوين والمونتاج النهائي</li></ul></div>
+    <div class="box"><h3>الجودة</h3><ul><li>Motion blur طبيعي، وعمق ميدان، ووهج عدسة خفيف</li><li>حبيبات فيلم خفيفة جداً</li><li>صوت مضبوط على −14 LUFS لإنستغرام</li></ul></div>
+    <div class="box"><h3>النصوص</h3><ul><li>كبيرة وواضحة، ثانيتان على الأقل لكل جملة</li><li>لا نصوص في أعلى 250px ولا في أسفل 400px</li><li>تدخل الكلمات مع ضربات الإيقاع</li></ul></div>
+    <div class="box"><h3>التسليم</h3><ul><li>ريلز 9:16 (1080×1920) ونسخة 4K للأرشيف</li><li>ستوري 15 ثانية (مشهد التجميد مع ملصق سؤال: «حارتك مغطاة؟»)</li><li>غلاف: القهوة المعلّقة و«الإنترنت اللي ما بيوقف»</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <h2>الكابشن <small>CAPTION</small></h2>
+  <div class="box" style="font-size:17px;line-height:2">
+    كل شي ممكن يوقف… إلا سرعتك ⚡<br>
+    إنترنت هوائي من مركز مكة للتقنيات، وتغطية بتوصل لحارتك بحمص 📡<br>
+    📍 حمص · القصور · خلف جامع حمود الناصر<br>
+    📞 0982 621 531 · 0986 955 402<br>
+    <span style="color:var(--accent)">#حمص #انترنت_حمص #انترنت_هوائي #مركز_مكة</span>
+  </div>
+</section>
+
+<section>
+  <h2>ما ينقص قبل التنفيذ <small>OPEN ITEMS</small></h2>
+  <div class="ask">
+    <ol>
+      <li><b>الأحياء المغطاة فعلاً</b>، لمشهد التغطية (00:15). الخريطة الآن فيها «حي ١، حي ٢…» مكان الأسماء.</li>
+      <li><b>الشعار بخلفية شفافة حقيقية</b> (PNG أو SVG أو AI). الصورة المرسلة فيها مربعات الشفافية مطبوعة داخلها، ولا تصلح لمشهد رسم القبة.</li>
+      <li><b>هل الإنترنت يعمل عند انقطاع الكهرباء؟</b> المركز يركّب أنظمة طاقة، فإذا كانت الأبراج على طاقة شمسية نضيف لقطة لألواح شمسية على البرج، ونقطة قوية جداً لحمص.</li>
+      <li><b>الفيديوهات السابقة</b> للمقارنة، حتى لا نكرر أسلوبها.</li>
+    </ol>
+  </div>
+  <img class="card-img" src="card.webp" alt="كرت مركز مكة: حمص، القصور، خلف جامع حمود الناصر" loading="lazy">
+</section>
+
+</main>
