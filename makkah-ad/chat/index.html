@@ -354,7 +354,8 @@ function render(t) {
 }
 window.ready = (async () => {
   await Promise.all([loadImg('logo', 'assets/logo.webp'), loadImg('card', 'assets/card.webp')]);
-  await Promise.all([document.fonts.load('700 80px "Readex Pro"', 'مكة'), document.fonts.load('500 40px "IBM Plex Sans Arabic"', 'مكة'), document.fonts.load('700 40px "IBM Plex Sans Arabic"', 'مكة'), document.fonts.load('40px "Noto Color Emoji"', '😩')]);
+  const probe = 'مكة abc 0.9… #:-%';
+  await Promise.all(['400 80px "Readex Pro"', '700 80px "Readex Pro"', '500 40px "IBM Plex Sans Arabic"', '700 40px "IBM Plex Sans Arabic"'].map(f => document.fonts.load(f, probe)).concat([document.fonts.load('40px "Noto Color Emoji"', '😩')]));
   layout(); buildEvents(); buildWall();
   return true;
 })();

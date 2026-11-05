@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>قبل / بعد — مركز مكة</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>html,body{margin:0;background:#fff}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// Before/after split-screen reel for Makkah Technologies. 1080x1920, 40s. Every frame comes from render(t).
+const W = 1080, H = 1920, DUR = 40, MID = 960;
+const C = { navy: '#02376C', green: '#50BE1E', greenD: '#3A9A12', ink: '#0F2236', mut: '#6B7C8F', red: '#E5484D', amber: '#F5A524' };
+const EMOJI = '"Noto Color Emoji"';
+const BODY = `"IBM Plex Sans Arabic",${EMOJI},sans-serif`;
+const DISPLAY = `"Readex Pro","IBM Plex Sans Arabic",${EMOJI},sans-serif`;
+const cv = document.getElementById('c');
+let ctx = cv.getContext('2d');
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const einExpo = p => p <= 0 ? 0 : Math.pow(2, 10 * p - 10);
+const eback = p => { const c1 = 1.7, c3 = c1 + 1; return Math.max(0, 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)); };
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function label(text, x, y, size, col, weight = 700, font = DISPLAY, align = 'center', dir = 'rtl') {
+  ctx.save(); ctx.font = `${weight} ${size}px ${font}`; ctx.direction = dir; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = col; ctx.fillText(text, x, y); ctx.restore();
+}
+function pill(text, x, y, size, bg, fg, padX = 30, h = null) {
+  ctx.save(); ctx.font = `700 ${size}px ${DISPLAY}`; ctx.direction = 'rtl'; const w = ctx.measureText(text).width + padX * 2, hh = h || size * 1.7;
+  ctx.fillStyle = bg; rr(ctx, x - w / 2, y - hh / 2, w, hh, hh / 2); ctx.fill(); ctx.restore(); label(text, x, y + 2, size, fg);
+}
+function words(text, x, y, size, t, tin, o = {}) {
+  if (t < tin) return;
+  ctx.save(); ctx.font = `${o.weight || 700} ${size}px ${o.font || DISPLAY}`; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const ws = text.split(' '), sp = ctx.measureText(' ').width, wd = ws.map(w => ctx.measureText(w).width);
+  let cx = x + (wd.reduce((a, b) => a + b, 0) + sp * (ws.length - 1)) / 2;
+  ws.forEach((w, i) => { const p = eout(seg(t, tin + i * .09, tin + i * .09 + .45)); if (p > 0) { ctx.globalAlpha = p; ctx.filter = `blur(${(1 - p) * 10}px)`; ctx.fillStyle = (o.colors && o.colors[i]) || o.color || C.ink; ctx.fillText(w, cx, y + (1 - p) * 36); } cx -= wd[i] + sp; });
+  ctx.restore();
+}
+function spinner(x, y, r, t, col = '#fff') { for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283 + Math.floor(t * 12) / 12 * 6.283; ctx.strokeStyle = col; ctx.globalAlpha = .15 + .85 * i / 12; ctx.lineWidth = r * .22; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r * .55, y + Math.sin(a) * r * .55); ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); ctx.stroke(); } ctx.globalAlpha = 1; }
+function wifi(x, y, s, col, a = 1) { ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineWidth = s * .14; for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(x, y, s * i * .3, Math.PI * 1.25, Math.PI * 1.75); ctx.stroke(); } ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, s * .09, 0, 7); ctx.fill(); ctx.restore(); }
+// draw something at low resolution then blow it up: instant "bad connection" pixelation
+function pixelated(fn, x, y, w, h, f) {
+  const off = mk(Math.max(1, Math.round(w / f)), Math.max(1, Math.round(h / f)));
+  const real = ctx; ctx = off.getContext('2d'); ctx.scale(1 / f, 1 / f); ctx.translate(-x, -y); fn(); ctx = real;
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(off, x, y, w, h); ctx.restore();
+}
+const IMG = {};
+function loadImg(k, src) { return new Promise(r => { const i = new Image(); i.onload = () => { IMG[k] = i; r(); }; i.src = src; }); }
+let GRAIN;
+
+// "bad internet" clock: 4 fps with freezes
+function badT(u) { const k = Math.floor(u / 2.2), r = u - k * 2.2; return Math.floor((k * 2.2 + Math.min(r, 1.3)) * 4) / 4; }
+
+// ---------- devices ----------
+function laptop(cx, cy, sw, sh) {
+  ctx.fillStyle = '#1B2430'; rr(ctx, cx - sw / 2 - 18, cy - sh / 2 - 18, sw + 36, sh + 36, 22); ctx.fill();
+  ctx.fillStyle = '#AEB8C4'; ctx.beginPath(); ctx.moveTo(cx - sw / 2 - 70, cy + sh / 2 + 18); ctx.lineTo(cx + sw / 2 + 70, cy + sh / 2 + 18); ctx.lineTo(cx + sw / 2 + 40, cy + sh / 2 + 46); ctx.lineTo(cx - sw / 2 - 40, cy + sh / 2 + 46); ctx.closePath(); ctx.fill();
+  return [cx - sw / 2, cy - sh / 2, sw, sh];
+}
+function tv(cx, cy, sw, sh) {
+  ctx.fillStyle = '#11161D'; rr(ctx, cx - sw / 2 - 14, cy - sh / 2 - 14, sw + 28, sh + 28, 14); ctx.fill();
+  ctx.fillStyle = '#5A6573'; ctx.fillRect(cx - 8, cy + sh / 2 + 14, 16, 40); rr(ctx, cx - 110, cy + sh / 2 + 50, 220, 14, 7); ctx.fill();
+  return [cx - sw / 2, cy - sh / 2, sw, sh];
+}
+function avatar(x, y, s, skin, hair, shirt, smile) {
+  ctx.fillStyle = shirt; ctx.beginPath(); ctx.ellipse(x, y + s * 1.25, s * 1.15, s * .75, 0, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.arc(x, y, s * .62, 0, 7); ctx.fill();
+  ctx.fillStyle = hair; ctx.beginPath(); ctx.arc(x, y - s * .12, s * .64, Math.PI * 1.02, Math.PI * 1.98); ctx.fill();
+  ctx.fillStyle = '#1B1B1B'; ctx.beginPath(); ctx.arc(x - s * .22, y + s * .02, s * .06, 0, 7); ctx.arc(x + s * .22, y + s * .02, s * .06, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#7A3B2A'; ctx.lineWidth = s * .07; ctx.lineCap = 'round'; ctx.beginPath();
+  if (smile > 0) ctx.arc(x, y + s * .16, s * .2, .2, Math.PI - .2); else { ctx.moveTo(x - s * .16, y + s * .32); ctx.lineTo(x + s * .16, y + s * .3); }
+  ctx.stroke();
+}
+
+// ---------- the five situations: each draws one half ----------
+function sCall(u, good, cx, cy) {
+  const [x, y, w, h] = laptop(cx, cy, 600, 340);
+  ctx.save(); rr(ctx, x, y, w, h, 8); ctx.clip();
+  ctx.fillStyle = '#20262E'; ctx.fillRect(x, y, w, h);
+  const main = () => { ctx.fillStyle = good ? '#CFE3F5' : '#9AA8B5'; ctx.fillRect(x + 12, y + 12, 400, h - 24); avatar(x + 212, y + 150, 92, '#E2B48C', '#3B2A20', C.navy, good ? 1 : 0); };
+  if (good) main(); else pixelated(main, x + 12, y + 12, 400, h - 24, 22);
+  ctx.fillStyle = good ? '#F2E3C9' : '#8E959C'; ctx.fillRect(x + 424, y + 12, 164, 150); avatar(x + 506, y + 82, 40, '#C99A74', '#222', C.greenD, 1);
+  // audio wave
+  ctx.fillStyle = good ? C.green : '#6B737C';
+  for (let i = 0; i < 9; i++) { const hh = good ? 10 + 26 * Math.abs(Math.sin(u * 9 + i * .9)) : 6; ctx.fillRect(x + 438 + i * 16, y + 250 - hh / 2, 9, hh); }
+  if (good) { pill('HD', x + 360, y + 40, 22, C.green, '#fff', 14); pill('اتصال ممتاز ✓', x + 506, y + 300, 22, 'rgba(80,190,30,.9)', '#fff', 16); }
+  else { spinner(x + 212, y + 170, 46, u); pill('ضعف الاتصال…', x + 506, y + 300, 22, C.red, '#fff', 16); }
+  ctx.restore();
+}
+function sMatch(u, good, cx, cy) {
+  const [x, y, w, h] = tv(cx, cy, 640, 360);
+  ctx.save(); rr(ctx, x, y, w, h, 6); ctx.clip();
+  for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? '#2F8F3A' : '#35A043'; ctx.fillRect(x + i * w / 8, y, w / 8 + 1, h); }
+  ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 3; ctx.strokeRect(x + 20, y + 20, w - 40, h - 40); ctx.beginPath(); ctx.moveTo(x + w / 2, y + 20); ctx.lineTo(x + w / 2, y + h - 20); ctx.stroke(); ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, 50, 0, 7); ctx.stroke();
+  const T = good ? u : Math.min(badT(u), 1.0);
+  for (let i = 0; i < 10; i++) { const team = i % 2; const px = x + w / 2 + Math.sin(T * 1.3 + i * 1.7) * 230 + (team ? 40 : -40), py = y + h / 2 + Math.cos(T * 1.1 + i * 2.3) * 120; ctx.fillStyle = team ? '#E5484D' : '#fff'; ctx.beginPath(); ctx.arc(px, py, 11, 0, 7); ctx.fill(); }
+  const bx = x + w / 2 + Math.sin(T * 2.1) * 200, by = y + h / 2 + Math.sin(T * 1.7) * 100; ctx.fillStyle = '#FFE15A'; ctx.beginPath(); ctx.arc(bx, by, 7, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.55)'; rr(ctx, x + 24, y + 24, 150, 44, 10); ctx.fill(); label('حمص 2 - 1', x + 99, y + 47, 24, '#fff', 700, BODY);
+  if (good) { pill('4K', x + w - 60, y + 46, 22, C.green, '#fff', 14); pill('12 ms', x + w - 80, y + h - 44, 22, 'rgba(0,0,0,.6)', '#9DF27A', 14); }
+  else { ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x, y, w, h); spinner(x + w / 2, y + h / 2, 52, u); pill('999 ms', x + w - 90, y + h - 44, 22, 'rgba(0,0,0,.6)', '#FF8A8A', 14); }
+  ctx.restore();
+}
+function sDownload(u, good, cx, cy) {
+  const [x, y, w, h] = laptop(cx, cy, 600, 340);
+  ctx.save(); rr(ctx, x, y, w, h, 8); ctx.clip();
+  ctx.fillStyle = good ? '#F4F8FC' : '#C9CDD2'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = good ? C.navy : '#7E868F'; rr(ctx, x + w - 150, y + 60, 100, 126, 12); ctx.fill(); label('ZIP', x + w - 100, y + 130, 26, '#fff', 700, BODY, 'center', 'ltr');
+  label('ملف الشغل', x + w - 180, y + 92, 30, C.ink, 700, BODY, 'right'); label('2.4 GB', x + w - 180, y + 140, 24, C.mut, 500, BODY, 'right', 'ltr');
+  const p = good ? eout(seg(u, .6, 1.8)) : .03 + .01 * Math.floor(badT(u) / 2);
+  ctx.fillStyle = 'rgba(15,34,54,.12)'; rr(ctx, x + 40, y + 220, w - 80, 26, 13); ctx.fill();
+  ctx.fillStyle = good ? C.green : C.red; rr(ctx, x + w - 40 - (w - 80) * p, y + 220, Math.max(26, (w - 80) * p), 26, 13); ctx.fill();
+  label(Math.round(p * 100) + '%', x + 80, y + 290, 30, C.ink, 700, BODY, 'center', 'ltr');
+  if (good) { const d = seg(u, 1.8, 2.2); if (d > 0) { pill('✓ اكتمل خلال ثانيتين', x + w - 200, y + 290, 26, C.green, '#fff', 18); const r = rng(3); for (let i = 0; i < 18; i++) { const a = r() * 6.28, q = seg(u, 1.8, 3.0); ctx.globalAlpha = 1 - q; ctx.fillStyle = [C.green, C.navy, C.amber][i % 3]; ctx.fillRect(x + w / 2 + Math.cos(a) * q * 260, y + 230 + Math.sin(a) * q * 160 + q * q * 80, 10, 10); } ctx.globalAlpha = 1; } }
+  else label('الوقت المتبقي: 3 ساعات 😩', x + w - 40, y + 290, 26, C.red, 700, BODY, 'right');
+  ctx.restore();
+}
+function sShop(u, good, cx, cy) {
+  // phone with orders (right) + CCTV monitor (left)
+  const px = cx + 170, py = cy;
+  ctx.fillStyle = '#11161D'; rr(ctx, px - 120, py - 210, 240, 420, 34); ctx.fill();
+  ctx.save(); rr(ctx, px - 108, py - 198, 216, 396, 26); ctx.clip(); ctx.fillStyle = good ? '#F4F8FC' : '#BFC4CA'; ctx.fillRect(px - 108, py - 198, 216, 396);
+  label('الطلبات', px, py - 165, 26, C.ink, 700, DISPLAY);
+  if (good) for (let i = 0; i < 3; i++) { const q = eback(seg(u, .5 + i * .6, .9 + i * .6)); if (q <= 0) continue; ctx.save(); ctx.translate(px, py - 100 + i * 96); ctx.scale(q, q); ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.12)'; ctx.shadowBlur = 10; rr(ctx, -96, -38, 192, 76, 16); ctx.fill(); ctx.shadowBlur = 0; label('طلب جديد 🛒', 10, -8, 22, C.ink, 700, BODY); label(`#10${4 + i}`, 0, 20, 18, C.greenD, 700, BODY, 'center', 'ltr'); ctx.restore(); }
+  else { ctx.fillStyle = '#fff'; rr(ctx, px - 96, py - 60, 192, 120, 16); ctx.fill(); label('⚠️', px, py - 22, 34, C.red, 500, BODY); label('فشل الإرسال', px, py + 24, 24, C.red, 700, BODY); spinner(px, py + 120, 22, u, '#555'); }
+  ctx.restore();
+  // CCTV monitor
+  const mx = cx - 160, my = cy - 10, mw = 360, mh = 250;
+  ctx.fillStyle = '#11161D'; rr(ctx, mx - mw / 2 - 12, my - mh / 2 - 12, mw + 24, mh + 24, 12); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.rect(mx - mw / 2, my - mh / 2, mw, mh); ctx.clip();
+  if (good) {
+    ctx.fillStyle = '#5F6B5A'; ctx.fillRect(mx - mw / 2, my - mh / 2, mw, mh);
+    ctx.fillStyle = '#8C7A5E'; for (let i = 0; i < 4; i++) ctx.fillRect(mx - mw / 2 + 20 + i * 85, my - 40, 60, 110);
+    ctx.fillStyle = '#A9B48C'; ctx.fillRect(mx - mw / 2, my + 70, mw, 60);
+    const wx = mx - 120 + ((u * 60) % 260); avatar(wx, my + 10, 30, '#D9A884', '#2B2B2B', '#3C6E9E', 1);
+    ctx.fillStyle = C.red; if (Math.sin(u * 8) > -.3) { ctx.beginPath(); ctx.arc(mx - mw / 2 + 24, my - mh / 2 + 22, 8, 0, 7); ctx.fill(); }
+    label('مباشر', mx - mw / 2 + 70, my - mh / 2 + 23, 20, '#fff', 700, BODY);
+  } else { const r = rng(Math.floor(badT(u) * 4) + 1); for (let i = 0; i < 400; i++) { ctx.fillStyle = `rgba(255,255,255,${r() * .4})`; ctx.fillRect(mx - mw / 2 + r() * mw, my - mh / 2 + r() * mh, 6, 3); } pill('لا توجد إشارة', mx, my, 24, 'rgba(0,0,0,.7)', '#fff', 16); }
+  ctx.restore();
+  label('كاميرا المحل', mx, my + mh / 2 + 40, 24, good ? C.ink : '#3A3F45', 700, BODY);
+}
+function sPower(u, good, cx, cy) {
+  // night house cross-section
+  ctx.fillStyle = good ? '#0E2A4D' : '#15181C'; rr(ctx, cx - 380, cy - 230, 760, 460, 28); ctx.fill();
+  ctx.fillStyle = good ? '#F2F2F2' : '#2A2D31';
+  if (good) { ctx.fillStyle = '#FFD45E'; ctx.beginPath(); ctx.arc(cx + 290, cy - 170, 26, 0, 7); ctx.fill(); }
+  // house
+  ctx.fillStyle = good ? '#D9CBB5' : '#3A3D41'; ctx.fillRect(cx - 250, cy - 60, 500, 260);
+  ctx.fillStyle = good ? '#8C5A3C' : '#2C2E31'; ctx.beginPath(); ctx.moveTo(cx - 290, cy - 60); ctx.lineTo(cx, cy - 210); ctx.lineTo(cx + 290, cy - 60); ctx.closePath(); ctx.fill();
+  // solar panel on the roof (good only)
+  if (good) { const a = eback(seg(u, .3, .8)); ctx.save(); ctx.translate(cx + 120, cy - 128); ctx.rotate(-.48); ctx.scale(a, a); ctx.fillStyle = '#123E73'; ctx.fillRect(-90, -26, 180, 52); ctx.strokeStyle = '#8FB4E0'; ctx.lineWidth = 2; for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(-90 + i * 30, -26); ctx.lineTo(-90 + i * 30, 26); ctx.stroke(); } ctx.beginPath(); ctx.moveTo(-90, 0); ctx.lineTo(90, 0); ctx.stroke(); ctx.restore(); }
+  // windows / lamps
+  const lit = good ? seg(u, .9, 1.2) : 0;
+  for (const wx of [cx - 160, cx + 60]) { ctx.fillStyle = lit ? `rgba(255,214,140,${.3 + .7 * lit})` : '#1C1E21'; ctx.fillRect(wx, cy, 100, 90); if (lit) { const g = ctx.createRadialGradient(wx + 50, cy + 45, 10, wx + 50, cy + 45, 160); g.addColorStop(0, `rgba(255,214,140,${.35 * lit})`); g.addColorStop(1, 'rgba(255,214,140,0)'); ctx.fillStyle = g; ctx.fillRect(wx - 110, cy - 115, 320, 320); } }
+  // router on a shelf
+  ctx.fillStyle = good ? '#16304F' : '#23262A'; rr(ctx, cx - 70, cy + 130, 140, 40, 10); ctx.fill();
+  for (let i = 0; i < 4; i++) { const on = good && lit > .5 && Math.sin(u * 9 - i) > -.3; ctx.fillStyle = on ? C.green : '#3A3D41'; ctx.beginPath(); ctx.arc(cx - 40 + i * 26, cy + 150, 6, 0, 7); ctx.fill(); }
+  if (good && lit > .5) wifi(cx, cy + 116, 70, C.green, .6 + .4 * Math.sin(u * 6));
+  if (good) { // battery + flow
+    ctx.fillStyle = '#E9EEF4'; rr(ctx, cx + 300, cy + 60, 50, 110, 8); ctx.fill(); ctx.fillStyle = C.green; ctx.fillRect(cx + 308, cy + 168 - 90 * lit, 34, 90 * lit);
+    label('طاقة شمسية من مكة ☀️', cx, cy + 250, 28, '#fff', 700, BODY);
+  } else label('انقطعت الكهرباء… وانقطع النت 🕯️', cx, cy + 250, 28, '#C9CDD2', 700, BODY);
+}
+const SCENES = [
+  { t: 3.0, name: 'اجتماع أونلاين', fn: sCall },
+  { t: 8.5, name: 'المباراة', fn: sMatch },
+  { t: 14.0, name: 'تحميل ملف للشغل', fn: sDownload },
+  { t: 19.5, name: 'المحل', fn: sShop },
+  { t: 25.0, name: 'انقطاع الكهرباء', fn: sPower },
+];
+
+// ---------- halves ----------
+function bgGood(t, y0, y1) {
+  const g = ctx.createLinearGradient(0, y0, W, y1); g.addColorStop(0, '#F5FBF2'); g.addColorStop(1, '#E3EEF9'); ctx.fillStyle = g; ctx.fillRect(0, y0, W, y1 - y0);
+  const blob = (x, y, r, col) => { const b = ctx.createRadialGradient(x, y, 0, x, y, r); b.addColorStop(0, col); b.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = b; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); };
+  blob(160 + Math.sin(t * .5) * 60, y0 + 200, 420, 'rgba(80,190,30,.18)'); blob(940, y1 - 200, 460, 'rgba(2,55,108,.12)');
+}
+function bgBad(y0, y1) { const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, '#3B3E43'); g.addColorStop(1, '#25272B'); ctx.fillStyle = g; ctx.fillRect(0, y0, W, y1 - y0); }
+function degrade(t, y0, y1) {
+  ctx.save(); ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = 'rgba(128,128,128,.85)'; ctx.fillRect(0, y0, W, y1 - y0); ctx.restore();
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.18)'; for (let y = y0; y < y1; y += 6) ctx.fillRect(0, y, W, 2); ctx.restore();
+  const r = rng(Math.floor(t * 4) + 3); if (r() < .35) { for (let i = 0; i < 4; i++) { const yy = y0 + r() * (y1 - y0), hh = 10 + r() * 50; ctx.drawImage(cv, 0, yy, W, hh, (r() - .5) * 60, yy, W, hh); } }
+}
+
+function waitClock(t) { const s = Math.floor(Math.max(0, t - .5)); return `⏳ انتظار ${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }
+
+function render(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  // divider wipes upward at the end
+  const D = lerp(MID, -60, eio(seg(t, 30.5, 31.6)));
+  // ---- bottom (good) ----
+  ctx.save(); ctx.beginPath(); ctx.rect(0, D, W, H - D); ctx.clip();
+  bgGood(t, 0, H);
+  if (t < 32.5) {
+    const fade = 1 - seg(t, 31.0, 31.5);
+    ctx.save(); ctx.globalAlpha = fade;
+    if (t >= 3) { const s = SCENES.filter(s => t >= s.t).pop(), u = t - s.t; const a = eout(seg(u, 0, .4)); ctx.save(); ctx.translate((1 - a) * -300, 0); ctx.globalAlpha *= a; s.fn(u, true, 540, 1300); ctx.restore(); }
+    else { words('نفس البيت… نفس الشغل…', W / 2, 1230, 64, t, .6, { color: C.navy }); words('الفرق؟ الإنترنت', W / 2, 1340, 84, t, 1.4, { colors: [C.navy, C.greenD] }); }
+    pill('مع مركز مكة 😎', 800, 1040, 34, C.green, '#fff');
+    ctx.restore();
+  }
+  ctx.restore();
+  // ---- top (bad) ----
+  if (D > 0) {
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, D); ctx.clip();
+    bgBad(0, D);
+    const tq = badT(t);
+    if (t >= 3) { const s = SCENES.filter(s => t >= s.t).pop(), u = t - s.t; s.fn(badT(u), false, 540, 640); }
+    else { label('نفس البيت… نفس الشغل…', W / 2, 600, 64, '#C9CDD2'); label('بس النت…', W / 2, 700, 84, '#E9ECEF'); spinner(540, 820, 40, tq, '#ddd'); }
+    degrade(t, 0, D);
+    pill('قبل 😤', 830, 330, 34, '#5A5F66', '#fff');
+    pill(waitClock(tq), 280, 330, 28, 'rgba(229,72,77,.9)', '#fff', 22);
+    ctx.restore();
+  }
+  // ---- divider + scene title ----
+  if (D > -40) {
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, D - 4, W, 8);
+    const s = t >= 3 && t < 30.5 ? SCENES.filter(s => t >= s.t).pop() : null;
+    if (s) { const p = eback(seg(t, s.t, s.t + .4)); ctx.save(); ctx.translate(540, D); ctx.scale(p, p); ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 20; pill(s.name, 0, 0, 36, C.navy, '#fff', 36, 70); ctx.restore(); }
+  }
+  // ---- the big reveal + outro ----
+  if (t > 31.0 && t < 33.4) { const a = seg(t, 31.0, 31.4) * (1 - seg(t, 32.8, 33.3)); ctx.save(); ctx.globalAlpha = a; const s = lerp(.85, 1, eout(seg(t, 31, 31.6))); ctx.translate(540, 900); ctx.scale(s, s); label('الفرق واضح 😎', 0, 0, 120, C.navy); ctx.restore(); }
+  if (t > 33.0) outro(t);
+  // grain
+  ctx.save(); ctx.globalAlpha = .05; ctx.globalCompositeOperation = 'overlay'; const r = rng(Math.floor(t * 30)); const ox = -r() * 512, oy = -r() * 512; for (let x = ox; x < W; x += 512) for (let y = oy; y < H; y += 512) ctx.drawImage(GRAIN, x, y); ctx.restore();
+  ctx.restore();
+}
+function outro(t) {
+  const u = t - 33.0;
+  const la = eback(seg(u, 0, .5));
+  ctx.save(); ctx.translate(540, 470); ctx.scale(la, la);
+  ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(2,30,60,.18)'; ctx.shadowBlur = 40; ctx.beginPath(); ctx.arc(0, 0, 190, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.drawImage(IMG.logo, -192, -192, 384, 384); ctx.restore();
+  words('مركز مكة لتخديم الإنترنت – حمص', W / 2, 740, 54, t, 33.4, { color: C.navy });
+  // services row
+  const icons = [['📡', 'إنترنت هوائي'], ['📹', 'كاميرات'], ['☀️', 'طاقة شمسية'], ['❄️', 'تكييف'], ['🛠️', 'متابعة']];
+  icons.forEach(([e, n], i) => { const p = eback(seg(u, .8 + i * .12, 1.2 + i * .12)); if (p <= 0) return; const x = 540 + (2 - i) * 190; ctx.save(); ctx.translate(x, 900); ctx.scale(p, p); ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(2,30,60,.12)'; ctx.shadowBlur = 16; rr(ctx, -80, -70, 160, 150, 26); ctx.fill(); ctx.shadowBlur = 0; label(e, 0, -18, 52, C.ink, 500, BODY); label(n, 0, 46, 22, C.ink, 700, BODY); ctx.restore(); });
+  const pp = eback(seg(u, 1.8, 2.3));
+  if (pp > 0) { ctx.save(); ctx.translate(540, 1090); ctx.scale(lerp(.8, 1, pp), lerp(.8, 1, pp)); ctx.fillStyle = C.navy; ctx.shadowColor = 'rgba(2,30,60,.25)'; ctx.shadowBlur = 30; rr(ctx, -380, -66, 760, 132, 66); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(-300, 0, 46, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(-300, 0, 20, Math.PI * .6, Math.PI * 1.45); ctx.stroke(); label('0982 621 531', 50, 4, 78, '#fff', 700, BODY, 'center', 'ltr'); ctx.restore(); }
+  words('📍 حمص – القصور – خلف جامع حمود الناصر', W / 2, 1220, 40, t, 35.4, { weight: 500, font: BODY, color: C.ink });
+  const cp = eout(seg(u, 3.2, 3.7));
+  if (cp > 0) { ctx.save(); ctx.globalAlpha = cp; ctx.translate(0, (1 - cp) * 40); ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(2,30,60,.12)'; ctx.shadowBlur = 24; rr(ctx, 130, 1310, 820, 120, 60); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(880, 1370, 38, 0, 7); ctx.fill(); label('💬', 880, 1372, 34, '#fff', 500, BODY); label('اكتب نقطة (.) بالتعليقات', 820, 1354, 40, C.ink, 700, DISPLAY, 'right'); label('ونرسلك التفاصيل والعروض', 820, 1396, 28, C.mut, 500, BODY, 'right'); const dot = eback(seg(u, 4.2, 4.5)); if (dot > 0) { ctx.save(); ctx.translate(230, 1364); ctx.scale(dot, dot); label('.', 0, 0, 120, C.green, 700, BODY); ctx.restore(); } ctx.restore(); }
+  words('اتصالك علينا، وراحتك بتهمنا 💚', W / 2, 1480, 46, t, 37.6, { color: C.greenD });
+}
+window.ready = (async () => {
+  await loadImg('logo', 'assets/logo.webp');
+  const probe = 'مكة abc 0.9… #:-%';
+  await Promise.all(['400 80px "Readex Pro"', '700 80px "Readex Pro"', '500 40px "IBM Plex Sans Arabic"', '700 40px "IBM Plex Sans Arabic"'].map(f => document.fonts.load(f, probe)).concat([document.fonts.load('40px "Noto Color Emoji"', '😩')]));
+  GRAIN = mk(512, 512); const g = GRAIN.getContext('2d'); const d = g.createImageData(512, 512); const r = rng(3); for (let i = 0; i < d.data.length; i += 4) { const v = r() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } g.putImageData(d, 0, 0);
+  for (const tt of [1, 5, 10, 16, 21, 27, 35]) render(tt);
+  await document.fonts.ready;
+  return true;
+})();
+window.render = render;
+</script>
+</body>
+</html>
