@@ -88,66 +88,94 @@ def tick():
 D3, Eb3, Fs3, G3, A3, Bb3, C4, D4 = 146.83, 155.56, 185.0, 196.0, 220.0, 233.08, 261.63, 293.66
 HIJ = [D4, 311.13, 369.99, 392.0, 440.0, 466.16, 523.25, 587.33, 622.25, 739.99, 783.99, 880.0]
 
-# --- arrangement: services promo, 120 BPM ---
+# --- arrangement v2: uplifting future-pop in A major (no oud, no Hijaz) ---
 BEAT = .5
-prog = [([D3, Fs3, A3], 73.42), ([Eb3, G3, Bb3], 77.78), ([130.81, Eb3, G3], 65.41), ([D3, Fs3, A3], 73.42)]
-def groove(t0, t1, full=True, kg=.9):
+def supersaw(freqs, dur, g=.05, cutoff=3200, pump=True):
+    n = int(dur * SR); t = T(n); s = np.zeros(n)
+    for f in freqs:
+        for d in (-.012, -.006, -.002, 0, .002, .006, .012):
+            ph = rng.random(); s += ((t * f * (1 + d) + ph) % 1) * 2 - 1
+    s = lp_fast(s, cutoff) / (len(freqs) * 7) ** .5
+    a = np.minimum(1, t / .02) * np.minimum(1, (dur - t) / .08)
+    if pump: a *= .25 + .75 * np.minimum(1, ((t % BEAT) / .22)) ** 1.5
+    return s * a * g
+def piano(f, dur=1.6, g=.22):
+    n = int(dur * SR); t = T(n)
+    s = sum(np.sin(2 * np.pi * f * k * (1 + .0004 * k * k) * t) * k ** -1.3 * np.exp(-t * (1.8 + k * 1.1)) for k in range(1, 9))
+    return s * np.minimum(1, t / .003) * g
+def snare(g=.55):
+    n = int(.3 * SR); t = T(n)
+    s = bp_fast(rng.standard_normal(n), 1500, 7000) * np.exp(-t * 16) + np.sin(2 * np.pi * 190 * t) * np.exp(-t * 30) * .8
+    return s * g
+def sub(f, dur, g=.36):
+    n = int(dur * SR); t = T(n); s = np.sin(2 * np.pi * f * t) + .15 * np.sin(4 * np.pi * f * t)
+    return s * np.minimum(1, t / .008) * np.minimum(1, (dur - t) / .04) * g
+def lead(f, dur=.45, g=.16):
+    n = int(dur * SR); t = T(n); vib = 1 + .004 * np.sin(2 * np.pi * 5.5 * t) * np.minimum(1, t / .2)
+    s = ((t * f * vib) % 1) * 2 - 1 + .6 * np.sign(np.sin(2 * np.pi * f * .5 * t))
+    return lp_fast(s, 2600) * np.minimum(1, t / .01) * np.exp(-t * 2.5) * g
+CH = {'Fm': ([185.0, 220.0, 277.18], 92.50), 'D': ([146.83, 185.0, 220.0], 73.42), 'A': ([220.0, 277.18, 329.63], 110.0), 'E': ([164.81, 207.65, 246.94], 82.41)}
+PROG = ['Fm', 'D', 'A', 'E']
+MEL = [659.25, 554.37, 493.88, 440.0, 493.88, 554.37, 659.25, 739.99]   # hook motif
+def drums(t0, t1, hats16=True, snr=True):
     b = 0; t = t0
     while t < t1 - 1e-6:
-        st(t, kick(), kg)
-        if full:
-            if b % 2 == 1: st(t, clap(), .8, fx=.2)
-            st(t + .25, hat(), 1, pan=.35); st(t, hat(), .6, pan=-.35)
-            if b % 4 == 3: st(t + .25, hat(True), .8, pan=.2)
+        st(t, kick(), .95)
+        if snr and b % 2 == 1: st(t, snare(), 1, fx=.25)
+        if hats16:
+            for k in range(4): st(t + k * .125, hat(), .9 if k % 2 else .5, pan=.3 * ((-1) ** k))
+            if b % 8 == 7: [st(t + .25 + k * .0625, hat(), .7, pan=.3) for k in range(4)]   # hat roll
         t += BEAT; b += 1
-def bars(t0, nbars, padg=.05, bassdiv=.25):
+def section(t0, nbars, g=.05, bassline=True, piano_g=0):
     for bar in range(nbars):
-        chord, root = prog[bar % 4]; t = t0 + bar * 2
-        st(t, pad(chord, 2.0, padg), 1, fx=.25)
-        k = 0
-        while k * bassdiv < 2 - 1e-6: st(t + k * bassdiv, bass(root, bassdiv * .9), 1); k += 1
+        chord, root = CH[PROG[bar % 4]]; t = t0 + bar * 2
+        st(t, supersaw(chord + [c * 2 for c in chord[:1]], 2.0, g), 1, fx=.25)
+        if bassline:
+            for k in range(4): st(t + k * .5, sub(root, .45), 1)
+        if piano_g: [st(t + k * .5, piano(c * 2, 1.2, piano_g), 1, pan=.2, fx=.3) for k, c in enumerate(chord + chord[:1])]
 def glitch(t, d=.15):
-    n = int(d * SR); s = rng.standard_normal(n); s = np.round(s * 3) / 3; s = bp_fast(s, 800, 6000) * .35
-    st(t, s, 1, pan=(rng.random() - .5))
-# 0–3 hook: uneasy drone, glitches, error beep
-st(0, np.sin(2 * np.pi * 49 * T(int(3 * SR))) * .14 + np.sin(2 * np.pi * 51.5 * T(int(3 * SR))) * .1)
+    n = int(d * SR); x = rng.standard_normal(n); x = np.round(x * 3) / 3; x = bp_fast(x, 800, 6000) * .35
+    st(t, x, 1, pan=(rng.random() - .5))
+# 0–3 hook: tense filtered pad, glitches, error beeps, reverse riser
+st(0, lp_fast(supersaw([92.5, 98.0], 3.0, .06, 600, pump=False), 500), 1)
 for tt in (.9, 1.0, 1.75, 1.85, 2.5, 2.6, 2.7, 2.8): glitch(tt)
-eb = np.sin(2 * np.pi * 880 * T(int(.12 * SR))) * .25; st(1.2, eb); st(1.38, eb)
-st(2.0, noise_swell(1.0, 300, 10000, g=.3), 1, fx=.2)
-# 3 drop: logo
-st(3.0, impact(), 1.0); st(3.0, bell(587.33, 3), .7, fx=.6); st(3.0, bell(880, 3), .45, fx=.6)
-for i, f in enumerate([293.66, 311.13, 369.99, 392.0, 440.0]): st(3.6 + i * .25, oud(f, 1.8), .9, pan=-.15, fx=.35)
-st(3.0, pad([D3, A3, D4], 3.0, .06), 1, fx=.35)
-# 6–9 values: beat enters, check pings
-groove(6.0, 30.0)
-bars(6.0, 12)
-for tt in (6.2, 6.65, 7.1): st(tt, ping(1318.5), .7, fx=.4)
-st(6.3, noise_swell(1.3, 200, 4000, g=.15), 1)
-# 9–30 services: accent on every change
-for k in range(7):
+eb = np.sin(2 * np.pi * 660 * T(int(.12 * SR))) * .22; st(1.2, eb); st(1.38, eb)
+st(1.8, noise_swell(1.2, 200, 12000, g=.32), 1, fx=.2)
+# 3–6 drop: big chord stab + impact, piano motif
+st(3.0, impact(), 1.0)
+st(3.0, supersaw([220.0, 277.18, 329.63, 440.0], 3.0, .07, 5000, pump=False) * np.exp(-T(int(3 * SR)) * .6), 1, fx=.4)
+for i, f in enumerate([659.25, 554.37, 440.0, 554.37, 659.25, 880.0]): st(3.5 + i * .33, piano(f, 1.5, .2), 1, pan=.15, fx=.4)
+# 6–30 main groove
+drums(6.0, 30.0)
+section(6.0, 12)
+for tt in (6.2, 6.65, 7.1): st(tt, ping(1318.5), .6, fx=.4)
+for rep in range(3):                     # hook melody every 8 s
+    t0 = 9.0 + rep * 8
+    for i, f in enumerate(MEL): st(t0 + i * .5, lead(f), 1, pan=-.1, fx=.35)
+for k in range(7):                       # accent on each service change
     t0 = 9 + 3 * k
-    st(t0 - .3, whoosh(.6, .4), 1, pan=.4 if k % 2 else -.4)
-    st(t0, pluck(HIJ[k + 2], .8), 1.0, fx=.45); st(t0, kick(), .4)
-    for j in range(4): st(t0 + .5 + j * .125, pluck(HIJ[(k + j * 2) % 12] * 2, .25), .35, pan=.4 * ((-1) ** j), fx=.3)
-# small sfx inside services
-for tt in (16.0, 16.25, 16.6): st(tt, tick(), .8)          # router toggles
-for tt in (18.45, 18.8, 19.15): st(tt, ping(1046.5), .5, fx=.3)  # places light up
-st(22.2, ping(1568), .5, fx=.3)                             # camera detection
-for j in range(5): st(28.6 + j * .1, ping(1760 + j * 220), .35, fx=.4)  # stars
-# 30–34 promise: breakdown, heart
-st(29.7, noise_swell(.5, 6000, 300, rise=False, g=.25), 1)
-st(30.0, pad([D3, Fs3, A3, D4], 4.0, .07), 1, fx=.45)
-for i, f in enumerate([440.0, 392.0, 369.99, 311.13, 293.66]): st(30.3 + i * .3, oud(f, 2.0), 1.0, pan=.15, fx=.4)
-for k in range(8): st(30.0 + k * .5, kick(.3), 1)
+    st(t0 - .3, whoosh(.6, .35), 1, pan=.4 if k % 2 else -.4)
+    st(t0, piano([880.0, 739.99, 659.25, 554.37, 659.25, 739.99, 880.0][k], 1.2, .18), 1, fx=.4)
+for tt in (16.0, 16.25, 16.6): st(tt, tick(), .8)
+for tt in (18.45, 18.8, 19.15): st(tt, ping(1046.5), .45, fx=.3)
+st(22.2, ping(1568), .45, fx=.3)
+for j in range(5): st(28.6 + j * .1, ping(1760 + j * 220), .3, fx=.4)
+# 30–34 breakdown: piano + soft pad
+st(29.7, noise_swell(.5, 6000, 300, rise=False, g=.22), 1)
+for bar in range(2):
+    chord, root = CH[PROG[bar % 4]]; t = 30.0 + bar * 2
+    st(t, supersaw(chord, 2.0, .035, 1500, pump=False), 1, fx=.4)
+    for k, c in enumerate(chord + [chord[1] * 2]): st(t + k * .5, piano(c * 2, 1.6, .2), 1, pan=.2, fx=.45)
 st(33.0, noise_swell(1.0, 400, 12000, g=.3), 1, fx=.2)
-# 34–42 contact + CTA
+# 34–42 final chorus + ending
 st(34.0, impact(), .7)
-groove(34.0, 41.0)
-bars(34.0, 4, padg=.055)
-st(35.3, ping(1760), .8, fx=.4)
-for tt in (39.1,): st(tt, tick(), 1.2)                       # the "." being typed
-st(39.5, whoosh(.4, .3), 1); st(39.6, ping(2093), .7, fx=.5)
-st(41.0, bell(587.33, 1.5), .6, fx=.6); st(41.0, kick(), .7)
+drums(34.0, 41.0)
+section(34.0, 4, g=.055)
+for i, f in enumerate(MEL): st(34.0 + i * .5, lead(f), 1, pan=-.1, fx=.35)
+st(35.3, ping(1760), .7, fx=.4)
+st(39.1, tick(), 1.2); st(39.5, whoosh(.4, .3), 1); st(39.6, ping(2093), .6, fx=.5)
+st(41.0, supersaw([220.0, 277.18, 329.63, 440.0], 1.0, .06, 4000, pump=False) * np.exp(-T(int(SR)) * 2), 1, fx=.5)
+st(41.0, kick(), .8); st(41.0, piano(880.0, 1.0, .2), 1, fx=.5)
 # reverb on FX bus
 ir_n = int(2.2 * SR); ir = rng.standard_normal(ir_n) * np.exp(-T(ir_n) * 2.6); ir = lp_fast(ir, 6000); ir /= np.abs(ir).sum() ** .5 * 6
 def conv(x, h):
