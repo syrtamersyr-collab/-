@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>محادثة مع مركز مكة</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>html,body{margin:0;background:#fff}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// Chat-story reel for Makkah Technologies. 1080x1920, 40s. Every frame comes from render(t).
+const W = 1080, H = 1920, DUR = 40;
+const C = { navy: '#02376C', green: '#50BE1E', greenD: '#3A9A12', ink: '#0F2236', mut: '#6B7C8F', red: '#E5484D' };
+const EMOJI = '"Noto Color Emoji"';
+const BODY = `"IBM Plex Sans Arabic",${EMOJI},sans-serif`;
+const DISPLAY = `"Readex Pro","IBM Plex Sans Arabic",${EMOJI},sans-serif`;
+const cv = document.getElementById('c');
+let ctx = cv.getContext('2d');
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const einExpo = p => p <= 0 ? 0 : Math.pow(2, 10 * p - 10);
+const spring = p => p <= 0 ? 0 : p >= 1 ? 1 : 1 - Math.exp(-6 * p) * Math.cos(9 * p);
+const eback = p => { const c1 = 1.7, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function label(text, x, y, size, col, weight = 700, font = DISPLAY, align = 'center', dir = 'rtl') {
+  ctx.save(); ctx.font = `${weight} ${size}px ${font}`; ctx.direction = dir; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = col; ctx.fillText(text, x, y); ctx.restore();
+}
+function words(text, x, y, size, t, tin, o = {}) {
+  if (t < tin) return;
+  ctx.save(); ctx.font = `${o.weight || 700} ${size}px ${o.font || DISPLAY}`; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const ws = text.split(' '), sp = ctx.measureText(' ').width, wd = ws.map(w => ctx.measureText(w).width);
+  let cx = x + (wd.reduce((a, b) => a + b, 0) + sp * (ws.length - 1)) / 2;
+  ws.forEach((w, i) => { const p = eout(seg(t, tin + i * .08, tin + i * .08 + .45)); if (p > 0) { ctx.globalAlpha = p; ctx.filter = `blur(${(1 - p) * 10}px)`; ctx.fillStyle = (o.colors && o.colors[i]) || o.color || C.ink; ctx.fillText(w, cx, y + (1 - p) * 36); } cx -= wd[i] + sp; });
+  ctx.restore();
+}
+function wrap(text, font, maxW) {
+  ctx.save(); ctx.font = font; ctx.direction = 'rtl';
+  const out = []; let line = '';
+  for (const w of text.split(' ')) { const tryL = line ? line + ' ' + w : w; if (ctx.measureText(tryL).width > maxW && line) { out.push(line); line = w; } else line = tryL; }
+  if (line) out.push(line);
+  const width = Math.max(...out.map(l => ctx.measureText(l).width)); ctx.restore();
+  return { lines: out, width };
+}
+
+// ---------- assets ----------
+const IMG = {};
+function loadImg(k, src) { return new Promise(r => { const i = new Image(); i.onload = () => { IMG[k] = i; r(); }; i.src = src; }); }
+
+// ---------- phone + chat geometry ----------
+const PW = 820, PH = 1500, PX = (W - PW) / 2, PY = 200;
+const SX = PX + 26, SY = PY + 26, SW = PW - 52, SHh = PH - 52;     // screen
+const HEAD = 150, INPUT = 120;
+const VX = SX, VY = SY + HEAD, VW = SW, VH = SHh - HEAD - INPUT;   // message viewport
+const FONT = `500 36px ${BODY}`, LH = 54, MAXW = 500;
+
+// ---------- the script ----------
+const MSG = [
+  { t: 0.4, me: 1, text: 'مرحبا 👋 النت عندي بيقطّع كل شوي 😩', time: '9:41' },
+  { t: 1.8, me: 1, text: 'وعندي شغل أونلاين وما عم يمشي الحال', time: '9:41' },
+  { typing: [3.0, 4.1] },
+  { t: 4.1, me: 0, text: 'أهلين فيك 🌹 ولا يهمك', time: '9:42' },
+  { t: 5.0, me: 0, text: 'منركّبلك إنترنت هوائي بجهاز LiteBeam، وبتحس بالفرق من أول يوم 💪', time: '9:42' },
+  { t: 7.0, me: 1, text: 'قديش التكلفة؟ 🤔', time: '9:43' },
+  { typing: [8.0, 9.0] },
+  { t: 9.0, me: 0, text: 'أسعارنا بتناسب الجميع 💚 والتركيب والبرمجة علينا', time: '9:43', zoom: 1 },
+  { t: 10.8, me: 1, text: 'تمام، أيمت فيكن تجو؟', time: '9:44' },
+  { t: 11.9, me: 0, text: 'بكرة الساعة 10 الصبح الفني عندك ✅', time: '9:44' },
+  { t: 13.4, date: 'اليوم التالي' },
+  { t: 14.6, me: 0, kind: 'photo', text: 'خلصنا التركيب على السطح 📡', time: '11:20', zoom: 1 },
+  { t: 17.0, me: 0, kind: 'speed', text: 'جرّب هلق 👇', time: '11:21', zoom: 1 },
+  { t: 19.8, me: 1, text: 'يا الله!! صار طيارة 🚀🚀', time: '11:22', zoom: 1 },
+  { t: 21.0, me: 1, text: 'طيب بتركّبو كاميرات مراقبة كمان؟ للمحل', time: '11:22' },
+  { typing: [22.2, 23.2] },
+  { t: 23.2, me: 0, text: 'أكيد 👌 وعنا كمان طاقة شمسية وتكييف', time: '11:23' },
+  { t: 24.6, me: 0, kind: 'list', time: '11:23' },
+  { t: 27.6, me: 1, text: 'يسلمو إيديكن، خدمة بتجنن 💚', time: '11:24', heart: 28.6 },
+  { t: 29.2, me: 0, text: 'هدفنا مو بس نركّب إنترنت… هدفنا نكسب ثقتك 🤝', time: '11:24', zoom: 1 },
+];
+const SERVICES = ['إنترنت هوائي', 'كاميرات مراقبة', 'طاقة شمسية', 'تكييف', 'متابعة بعد التركيب'];
+const GAP = 18;
+function layout() {
+  for (const m of MSG) {
+    if (m.typing) { m.h = 96; m.w = 150; continue; }
+    if (m.date) { m.h = 90; continue; }
+    if (m.kind === 'photo' || m.kind === 'speed') { const cap = wrap(m.text, FONT, 460); m.cap = cap; m.w = 520; m.mediaH = m.kind === 'photo' ? 380 : 330; m.h = 20 + m.mediaH + 16 + cap.lines.length * LH + 40; continue; }
+    if (m.kind === 'list') { m.w = 520; m.h = 30 + 60 + SERVICES.length * 62 + 44; continue; }
+    const wr = wrap(m.text, FONT, MAXW); m.lines = wr.lines; m.w = Math.max(wr.width + 56, 190); m.h = 26 + wr.lines.length * LH + 40 + (m.heart ? 20 : 0);
+  }
+}
+// items visible at time t (typing bubbles only while active)
+function visible(t) { return MSG.filter(m => m.typing ? (t >= m.typing[0] && t < m.typing[1]) : t >= m.t); }
+function contentH(list) { return list.reduce((a, m) => a + m.h + GAP, 24); }
+// scroll: eased between successive targets
+let EVENTS = [];
+function buildEvents() {
+  const times = new Set([0]);
+  MSG.forEach(m => { if (m.typing) { times.add(m.typing[0]); times.add(m.typing[1]); } else times.add(m.t); });
+  EVENTS = [...times].sort((a, b) => a - b).map(tt => ({ t: tt, s: Math.max(0, contentH(visible(tt + 1e-4)) - VH) }));
+}
+function scrollAt(t) {
+  let s = 0;
+  for (let i = 0; i < EVENTS.length; i++) { const e = EVENTS[i]; if (t < e.t) break; const prev = i ? EVENTS[i - 1].s : 0; s = lerp(prev, e.s, eout(seg(t, e.t, e.t + .38))); }
+  return s;
+}
+
+// ---------- background: light, brand blobs, faint pattern ----------
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#F6FBF3'); g.addColorStop(1, '#E8F0FA');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const blob = (x, y, r, col) => { const b = ctx.createRadialGradient(x, y, 0, x, y, r); b.addColorStop(0, col); b.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = b; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); };
+  blob(180 + Math.sin(t * .4) * 80, 300 + Math.cos(t * .3) * 60, 520, 'rgba(80,190,30,.20)');
+  blob(920 + Math.cos(t * .35) * 70, 1500 + Math.sin(t * .5) * 80, 620, 'rgba(2,55,108,.16)');
+  blob(950, 250, 380, 'rgba(95,200,255,.12)');
+  ctx.save(); ctx.fillStyle = 'rgba(2,55,108,.07)';
+  for (let y = 40; y < H; y += 60) for (let x = (y / 60 % 2) * 30 + 20; x < W; x += 60) { ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+let WALL;
+function buildWall() {
+  WALL = mk(SW, 3000); const g = WALL.getContext('2d');
+  g.fillStyle = '#EEF6EC'; g.fillRect(0, 0, SW, 3000);
+  const r = rng(9); g.strokeStyle = 'rgba(2,55,108,.07)'; g.fillStyle = 'rgba(2,55,108,.07)'; g.lineWidth = 4; g.lineCap = 'round';
+  for (let y = 40; y < 3000; y += 130) for (let x = 40 + (y / 130 % 2) * 65; x < SW; x += 130) {
+    const k = Math.floor(r() * 3); g.save(); g.translate(x, y); g.rotate((r() - .5) * .6);
+    if (k === 0) { for (let i = 1; i <= 3; i++) { g.beginPath(); g.arc(0, 10, i * 9, Math.PI * 1.25, Math.PI * 1.75); g.stroke(); } }
+    else if (k === 1) { g.beginPath(); g.moveTo(-18, 8); g.quadraticCurveTo(-18, -14, 0, -18); g.quadraticCurveTo(18, -14, 18, 8); g.closePath(); g.fill(); }
+    else { g.beginPath(); g.ellipse(0, 0, 18, 12, 0, 0, 7); g.stroke(); g.beginPath(); g.moveTo(0, 12); g.lineTo(0, 26); g.stroke(); }
+    g.restore();
+  }
+}
+
+// ---------- rich message contents ----------
+function panelAntenna(x, y, sc) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
+  ctx.strokeStyle = '#7F93AA'; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(14, 30); ctx.lineTo(14, 190); ctx.stroke();
+  const g = ctx.createLinearGradient(-80, -60, 80, 60); g.addColorStop(0, '#FFFFFF'); g.addColorStop(.6, '#E3E9EF'); g.addColorStop(1, '#B4BFCB');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-82, -48); ctx.quadraticCurveTo(0, -66, 82, -48); ctx.quadraticCurveTo(70, 0, 82, 48); ctx.quadraticCurveTo(0, 66, -82, 48); ctx.quadraticCurveTo(-70, 0, -82, -48); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(80,100,120,.25)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(90,110,130,.4)'; for (let i = -70; i <= 70; i += 9) for (let j = -44; j <= 44; j += 9) if (Math.abs(i) > 22) { ctx.beginPath(); ctx.arc(i, j, 1.4, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#F7F9FB'; ctx.fillRect(-20, -58, 40, 116);
+  ctx.fillStyle = '#EEF2F6'; ctx.beginPath(); ctx.moveTo(-10, -6); ctx.lineTo(-62, 4); ctx.lineTo(-62, 26); ctx.lineTo(-10, 14); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#FFFFFF'; rr(ctx, -84, -4, 30, 34, 6); ctx.fill(); ctx.strokeStyle = 'rgba(80,100,120,.25)'; ctx.stroke();
+  ctx.restore();
+}
+function drawPhoto(x, y, w, h, t, t0) {
+  ctx.save(); rr(ctx, x, y, w, h, 22); ctx.clip();
+  const sk = ctx.createLinearGradient(0, y, 0, y + h); sk.addColorStop(0, '#7EC3F2'); sk.addColorStop(1, '#D7EEFB'); ctx.fillStyle = sk; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.ellipse(x + 110, y + 70, 60, 20, 0, 0, 7); ctx.ellipse(x + 150, y + 60, 46, 24, 0, 0, 7); ctx.fill();
+  const sun = ctx.createRadialGradient(x + w - 90, y + 80, 10, x + w - 90, y + 80, 90); sun.addColorStop(0, 'rgba(255,240,180,1)'); sun.addColorStop(1, 'rgba(255,240,180,0)'); ctx.fillStyle = sun; ctx.fillRect(x + w - 180, y - 10, 180, 180);
+  const r = rng(12); let bx = x - 10;
+  while (bx < x + w) { const bw = 60 + r() * 70, bh = 50 + r() * 90; ctx.fillStyle = `hsl(${30 + r() * 10},${18 + r() * 10}%,${72 + r() * 8}%)`; ctx.fillRect(bx, y + h - 120 - bh, bw, bh + 200); ctx.fillStyle = 'rgba(80,110,140,.5)'; for (let k = 0; k < 4; k++) ctx.fillRect(bx + 10 + (k % 2) * 28, y + h - 110 - bh + 16 + Math.floor(k / 2) * 30, 16, 18); bx += bw; }
+  ctx.fillStyle = '#D9CBB5'; ctx.fillRect(x, y + h - 120, w, 120); ctx.fillStyle = '#C7B79E'; ctx.fillRect(x, y + h - 120, w, 10);
+  ctx.fillStyle = '#E8EDF2'; rr(ctx, x + 50, y + h - 190, 70, 76, 10); ctx.fill(); ctx.fillStyle = '#CBD4DD'; ctx.fillRect(x + 54, y + h - 196, 62, 10);
+  panelAntenna(x + w * .62, y + h * .38, .95);
+  // install badge
+  const b = eback(seg(t, t0 + .5, t0 + .9));
+  if (b > 0) { ctx.save(); ctx.translate(x + 120, y + 56); ctx.scale(b, b); ctx.fillStyle = C.green; rr(ctx, -95, -26, 190, 52, 26); ctx.fill(); label('✓ تم التركيب', 0, 2, 26, '#fff', 700, BODY); ctx.restore(); }
+  ctx.restore();
+}
+function drawSpeed(x, y, w, h, t, t0) {
+  ctx.save(); rr(ctx, x, y, w, h, 22); const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, '#062A55'); g.addColorStop(1, '#021733'); ctx.fillStyle = g; ctx.fill(); ctx.clip();
+  const cx = x + w / 2, cy = y + 200, R = 130, a0 = Math.PI * .8, a1 = Math.PI * 2.2;
+  const v = eout(seg(t, t0 + .3, t0 + 1.8));
+  ctx.lineCap = 'round'; ctx.lineWidth = 22; ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.beginPath(); ctx.arc(cx, cy, R, a0, a1); ctx.stroke();
+  const gg = ctx.createLinearGradient(cx - R, 0, cx + R, 0); gg.addColorStop(0, '#2E9A10'); gg.addColorStop(1, '#A6F27A');
+  ctx.strokeStyle = gg; ctx.shadowColor = C.green; ctx.shadowBlur = 24; ctx.beginPath(); ctx.arc(cx, cy, R, a0, lerp(a0, a1, v * .95)); ctx.stroke(); ctx.shadowBlur = 0;
+  label(String(Math.round(v * 95)), cx, cy - 6, 84, '#fff', 700, BODY, 'center', 'ltr');
+  label('Mbps', cx, cy + 56, 28, 'rgba(255,255,255,.65)', 500, BODY, 'center', 'ltr');
+  label('فحص السرعة', cx, y + 40, 28, 'rgba(255,255,255,.8)', 700, BODY);
+  const done = seg(t, t0 + 1.8, t0 + 2.1);
+  ctx.globalAlpha = done; label('↓ تحميل 95', x + w * .72, y + h - 34, 26, '#A6F27A', 700, BODY); label('↑ رفع 40', x + w * .28, y + h - 34, 26, '#8FD3FF', 700, BODY);
+  ctx.restore();
+}
+function drawList(x, y, w, t, t0) {
+  label('خدماتنا', x + w - 30, y + 46, 34, C.navy, 700, DISPLAY, 'right');
+  SERVICES.forEach((s, i) => {
+    const yy = y + 110 + i * 62, p = eback(seg(t, t0 + .35 + i * .22, t0 + .7 + i * .22));
+    ctx.save(); ctx.globalAlpha = clamp(p);
+    ctx.fillStyle = 'rgba(80,190,30,.10)'; rr(ctx, x + 20, yy - 26, w - 40, 52, 14); ctx.fill();
+    label(s, x + w - 40, yy + 2, 32, C.ink, 500, BODY, 'right');
+    ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(x + 54, yy, 18 * p, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x + 45, yy + 1); ctx.lineTo(x + 52, yy + 8); ctx.lineTo(x + 64, yy - 7); ctx.stroke();
+    ctx.restore();
+  });
+}
+
+// ---------- bubbles ----------
+function bubble(m, x, y, t) {
+  const p = m.typing ? eout(seg(t, m.typing[0], m.typing[0] + .25)) : spring(seg(t, m.t, m.t + .55));
+  const a = clamp(seg(t, m.typing ? m.typing[0] : m.t, (m.typing ? m.typing[0] : m.t) + .15));
+  const me = m.me === 1;
+  // RTL chat: my messages sit on the left, theirs on the right
+  const bx = me ? VX + 24 : VX + VW - 24 - m.w;
+  ctx.save(); ctx.globalAlpha = a;
+  const ox = me ? bx : bx + m.w, oy = y + m.h;
+  ctx.translate(ox, oy); ctx.scale(lerp(.55, 1, p), lerp(.55, 1, p)); ctx.translate(-ox, -oy);
+  ctx.shadowColor = 'rgba(15,34,54,.12)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+  ctx.fillStyle = me ? '#D6F5C4' : '#FFFFFF';
+  rr(ctx, bx, y, m.w, m.h, 30); ctx.fill(); ctx.shadowColor = 'transparent';
+  // tail
+  ctx.beginPath(); if (me) { ctx.moveTo(bx + 4, y + m.h - 30); ctx.lineTo(bx - 12, y + m.h); ctx.lineTo(bx + 30, y + m.h - 6); } else { ctx.moveTo(bx + m.w - 4, y + m.h - 30); ctx.lineTo(bx + m.w + 12, y + m.h); ctx.lineTo(bx + m.w - 30, y + m.h - 6); } ctx.fill();
+  if (m.typing) {
+    for (let k = 0; k < 3; k++) { const j = Math.max(0, Math.sin(t * 9 - k * .9)); ctx.fillStyle = `rgba(107,124,143,${.45 + .5 * j})`; ctx.beginPath(); ctx.arc(bx + 45 + k * 30, y + m.h / 2 - j * 8, 10, 0, 7); ctx.fill(); }
+    ctx.restore(); return;
+  }
+  ctx.font = FONT; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillStyle = C.ink;
+  let ty = y + 22;
+  if (m.kind === 'photo' || m.kind === 'speed') {
+    (m.kind === 'photo' ? drawPhoto : drawSpeed)(bx + 12, y + 12, m.w - 24, m.mediaH, t, m.t);
+    ty = y + 12 + m.mediaH + 16; ctx.font = FONT; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillStyle = C.ink;
+    m.cap.lines.forEach((l, i) => ctx.fillText(l, bx + m.w - 28, ty + i * LH));
+  } else if (m.kind === 'list') {
+    drawList(bx, y, m.w, t, m.t);
+  } else {
+    m.lines.forEach((l, i) => ctx.fillText(l, bx + m.w - 28, ty + i * LH));
+  }
+  // time + ticks
+  ctx.font = `500 22px ${BODY}`; ctx.direction = 'ltr'; ctx.textAlign = 'left'; ctx.fillStyle = C.mut; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(m.time, bx + 22, y + m.h - 16);
+  if (me) { const read = t > m.t + .9; ctx.strokeStyle = read ? '#2E9AE0' : C.mut; ctx.lineWidth = 3; ctx.lineCap = 'round'; for (const dx of [0, 10]) { ctx.beginPath(); ctx.moveTo(bx + 82 + dx, y + m.h - 26); ctx.lineTo(bx + 89 + dx, y + m.h - 19); ctx.lineTo(bx + 101 + dx, y + m.h - 33); ctx.stroke(); } }
+  ctx.restore();
+  // heart reaction
+  if (m.heart && t > m.heart) {
+    const hp = eback(seg(t, m.heart, m.heart + .45));
+    ctx.save(); ctx.translate(bx + 40, y + m.h + 2); ctx.scale(hp, hp);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.15)'; ctx.shadowBlur = 8; ctx.beginPath(); ctx.arc(0, 0, 26, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    label('❤️', 0, 2, 28, C.red, 500, BODY); ctx.restore();
+    const fl = seg(t, m.heart, m.heart + 1.0);
+    if (fl < 1) { ctx.save(); ctx.globalAlpha = 1 - fl; label('❤️', bx + 40, y + m.h - 40 - fl * 160, 60 + fl * 20, C.red, 500, BODY); ctx.restore(); }
+  }
+}
+function dateChip(m, y, t) {
+  const p = eback(seg(t, m.t, m.t + .4));
+  ctx.save(); ctx.globalAlpha = clamp(p); ctx.translate(VX + VW / 2, y + m.h / 2); ctx.scale(p, p);
+  ctx.fillStyle = 'rgba(2,55,108,.85)'; rr(ctx, -130, -28, 260, 56, 28); ctx.fill(); label(m.date, 0, 2, 28, '#fff', 700, BODY); ctx.restore();
+}
+
+// ---------- phone ----------
+function phone(t) {
+  // body
+  ctx.save(); ctx.shadowColor = 'rgba(2,30,60,.28)'; ctx.shadowBlur = 70; ctx.shadowOffsetY = 30;
+  ctx.fillStyle = '#0D1520'; rr(ctx, PX, PY, PW, PH, 96); ctx.fill(); ctx.restore();
+  ctx.strokeStyle = '#3A4656'; ctx.lineWidth = 4; rr(ctx, PX + 2, PY + 2, PW - 4, PH - 4, 94); ctx.stroke();
+  ctx.save(); rr(ctx, SX, SY, SW, SHh, 72); ctx.clip();
+  // wallpaper + messages
+  const sc = scrollAt(t);
+  ctx.drawImage(WALL, 0, (sc * .3) % 130, SW, VH + 260, VX, VY - 130, SW, VH + 260);
+  ctx.save(); ctx.beginPath(); ctx.rect(VX, VY, VW, VH); ctx.clip();
+  const list = visible(t); let y = VY + 24 - sc + Math.max(0, VH - contentH(list));
+  for (const m of list) { if (y + m.h > VY - 40 && y < VY + VH + 40) { if (m.date) dateChip(m, y, t); else bubble(m, 0, y, t); } y += m.h + GAP; }
+  ctx.restore();
+  // header
+  ctx.fillStyle = '#FFFFFF'; ctx.fillRect(SX, SY, SW, HEAD); ctx.fillStyle = 'rgba(15,34,54,.08)'; ctx.fillRect(SX, SY + HEAD - 2, SW, 2);
+  label('9:41', SX + 90, SY + 32, 24, C.ink, 700, BODY, 'center', 'ltr');
+  ctx.fillStyle = C.ink; for (let i = 0; i < 4; i++) ctx.fillRect(SX + SW - 150 + i * 10, SY + 38 - i * 5, 7, 6 + i * 5); rr(ctx, SX + SW - 98, SY + 22, 44, 22, 6); ctx.fill();
+  ctx.fillStyle = '#000'; rr(ctx, SX + SW / 2 - 70, SY + 12, 140, 38, 19); ctx.fill();
+  const ay = SY + 100;
+  ctx.strokeStyle = C.navy; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(SX + SW - 40, ay - 14); ctx.lineTo(SX + SW - 28, ay); ctx.lineTo(SX + SW - 40, ay + 14); ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.arc(SX + SW - 100, ay, 38, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.clip(); ctx.drawImage(IMG.logo, SX + SW - 140, ay - 40, 80, 80); ctx.restore();
+  ctx.strokeStyle = 'rgba(15,34,54,.12)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(SX + SW - 100, ay, 38, 0, 7); ctx.stroke();
+  label('مركز مكة للتقنيات', SX + SW - 156, ay - 16, 32, C.ink, 700, DISPLAY, 'right');
+  const typing = MSG.some(m => m.typing && t >= m.typing[0] && t < m.typing[1]);
+  label(typing ? 'يكتب الآن…' : 'متصل الآن', SX + SW - 180, ay + 22, 24, typing ? C.greenD : C.mut, 500, BODY, 'right');
+  ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(SX + SW - 166, ay + 22, 6, 0, 7); ctx.fill();
+  ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(SX + SW - 166 + 100, ay - 16, 0, 0, 7); ctx.fill();
+  // icons left of header
+  ctx.strokeStyle = C.navy; ctx.lineWidth = 4; rr(ctx, SX + 40, ay - 14, 40, 28, 6); ctx.stroke(); ctx.beginPath(); ctx.moveTo(SX + 80, ay - 4); ctx.lineTo(SX + 96, ay - 12); ctx.lineTo(SX + 96, ay + 12); ctx.lineTo(SX + 80, ay + 4); ctx.stroke();
+  ctx.beginPath(); ctx.arc(SX + 140, ay + 2, 14, 0, 7); ctx.stroke();
+  // input bar
+  const iy = SY + SHh - INPUT;
+  ctx.fillStyle = '#F7F9FB'; ctx.fillRect(SX, iy, SW, INPUT);
+  ctx.fillStyle = '#fff'; rr(ctx, SX + 110, iy + 22, SW - 150, 64, 32); ctx.fill(); ctx.strokeStyle = 'rgba(15,34,54,.1)'; ctx.lineWidth = 2; ctx.stroke();
+  // my outgoing text "types" into the input before sending
+  const next = MSG.find(m => m.me === 1 && !m.kind && t >= m.t - 1.0 && t < m.t);
+  if (next) {
+    const q = seg(t, next.t - 1.0, next.t - .1); const chars = [...next.text]; const s = chars.slice(0, Math.round(chars.length * q)).join('');
+    ctx.save(); ctx.beginPath(); ctx.rect(SX + 130, iy + 22, SW - 190, 64); ctx.clip();
+    label(s, SX + SW - 70, iy + 56, 30, C.ink, 500, BODY, 'right'); ctx.restore();
+  } else label('اكتب رسالة', SX + SW - 70, iy + 56, 30, '#A2AEBB', 500, BODY, 'right');
+  ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(SX + 62, iy + 54, 36, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(SX + 46, iy + 54); ctx.lineTo(SX + 76, iy + 40); ctx.lineTo(SX + 76, iy + 68); ctx.closePath(); ctx.fill();
+  // time-skip wipe
+  const sw = seg(t, 13.1, 13.9);
+  if (sw > 0 && sw < 1) { const x = lerp(SX + SW + 200, SX - 600, eio(sw)); const g = ctx.createLinearGradient(x, 0, x + 400, 0); g.addColorStop(0, 'rgba(80,190,30,0)'); g.addColorStop(.5, 'rgba(80,190,30,.55)'); g.addColorStop(1, 'rgba(80,190,30,0)'); ctx.fillStyle = g; ctx.fillRect(SX, SY, SW, SHh); }
+  ctx.restore();
+}
+
+// camera: gentle float + punch-ins on key messages
+function camera(t) {
+  let z = 1, fy = 0;
+  for (const m of MSG) if (m.zoom) { const p = eio(seg(t, m.t + .1, m.t + .6)) * (1 - eio(seg(t, m.t + 1.9, m.t + 2.5))); z = Math.max(z, 1 + .12 * p); if (p > 0) fy = Math.max(fy, p); }
+  return { z, rot: Math.sin(t * .6) * .012, dy: Math.sin(t * .8) * 8, fy };
+}
+
+// ---------- outro (31.5–40) ----------
+function outro(t) {
+  const u = t - 31.5;
+  const la = eback(seg(u, .3, .8));
+  if (la > 0) {
+    ctx.save(); ctx.translate(540, 520); ctx.scale(la, la);
+    const g = ctx.createRadialGradient(0, 0, 150, 0, 0, 380); g.addColorStop(0, 'rgba(80,190,30,.25)'); g.addColorStop(1, 'rgba(80,190,30,0)'); ctx.fillStyle = g; ctx.fillRect(-400, -400, 800, 800);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(2,30,60,.18)'; ctx.shadowBlur = 40; ctx.beginPath(); ctx.arc(0, 0, 220, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.drawImage(IMG.logo, -222, -222, 444, 444); ctx.restore();
+  }
+  words('اتصالك علينا،', W / 2, 860, 84, t, 32.3, { color: C.navy });
+  words('وراحتك بتهمنا 💚', W / 2, 970, 84, t, 32.8, { color: C.greenD });
+  const pp = eback(seg(u, 2.0, 2.5));
+  if (pp > 0) {
+    ctx.save(); ctx.globalAlpha = clamp(pp); ctx.translate(540, 1120); ctx.scale(lerp(.8, 1, pp), lerp(.8, 1, pp));
+    ctx.fillStyle = C.navy; ctx.shadowColor = 'rgba(2,30,60,.25)'; ctx.shadowBlur = 30; rr(ctx, -380, -66, 760, 132, 66); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(-300, 0, 46, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(-300, 0, 20, Math.PI * .6, Math.PI * 1.45); ctx.stroke();
+    label('0982 621 531', 50, 4, 78, '#fff', 700, BODY, 'center', 'ltr'); ctx.restore();
+  }
+  words('📍 حمص – القصور – خلف جامع حمود الناصر', W / 2, 1250, 40, t, 34.6, { weight: 500, font: BODY, color: C.ink });
+  // comment CTA
+  const cp = eout(seg(u, 3.8, 4.3));
+  if (cp > 0) {
+    ctx.save(); ctx.globalAlpha = cp; ctx.translate(0, (1 - cp) * 40);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(2,30,60,.12)'; ctx.shadowBlur = 24; rr(ctx, 130, 1330, 820, 120, 60); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(880, 1390, 38, 0, 7); ctx.fill(); label('💬', 880, 1392, 34, '#fff', 500, BODY);
+    label('اكتب نقطة (.) بالتعليقات', 820, 1374, 40, C.ink, 700, DISPLAY, 'right');
+    label('ونرسلك التفاصيل والعروض', 820, 1416, 28, C.mut, 500, BODY, 'right');
+    const dot = eback(seg(u, 4.8, 5.1)); if (dot > 0) { ctx.save(); ctx.translate(230, 1384); ctx.scale(dot, dot); label('.', 0, 0, 120, C.green, 700, BODY); ctx.restore(); }
+    ctx.restore();
+  }
+}
+
+// ---------- timeline ----------
+function render(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  background(t);
+  // intro: phone rises in; outro: phone slides away
+  const inP = eout(seg(t, 0, .6)), outP = einExpo(seg(t, 31.0, 31.8));
+  if (outP < 1) {
+    const cam = camera(t);
+    ctx.save();
+    ctx.translate(W / 2, 1300 + (1 - inP) * 500 + outP * 1700 + cam.dy);
+    ctx.rotate(cam.rot); ctx.scale(cam.z, cam.z);
+    ctx.translate(-W / 2, -1300);
+    phone(t);
+    ctx.restore();
+  }
+  if (t > 31.2) outro(t);
+  ctx.restore();
+}
+window.ready = (async () => {
+  await Promise.all([loadImg('logo', 'assets/logo.webp'), loadImg('card', 'assets/card.webp')]);
+  await Promise.all([document.fonts.load('700 80px "Readex Pro"', 'مكة'), document.fonts.load('500 40px "IBM Plex Sans Arabic"', 'مكة'), document.fonts.load('700 40px "IBM Plex Sans Arabic"', 'مكة'), document.fonts.load('40px "Noto Color Emoji"', '😩')]);
+  layout(); buildEvents(); buildWall();
+  return true;
+})();
+window.render = render;
+</script>
+</body>
+</html>
