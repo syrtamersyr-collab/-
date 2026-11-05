@@ -186,7 +186,7 @@ function drawList(x, y, w, t, t0) {
     ctx.save(); ctx.globalAlpha = clamp(p);
     ctx.fillStyle = 'rgba(80,190,30,.10)'; rr(ctx, x + 20, yy - 26, w - 40, 52, 14); ctx.fill();
     label(s, x + w - 40, yy + 2, 32, C.ink, 500, BODY, 'right');
-    ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(x + 54, yy, 18 * p, 0, 7); ctx.fill();
+    ctx.fillStyle = C.green; ctx.beginPath(); ctx.arc(x + 54, yy, Math.max(0, 18 * p), 0, 7); ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x + 45, yy + 1); ctx.lineTo(x + 52, yy + 8); ctx.lineTo(x + 64, yy - 7); ctx.stroke();
     ctx.restore();
   });
