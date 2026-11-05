@@ -88,94 +88,130 @@ def tick():
 D3, Eb3, Fs3, G3, A3, Bb3, C4, D4 = 146.83, 155.56, 185.0, 196.0, 220.0, 233.08, 261.63, 293.66
 HIJ = [D4, 311.13, 369.99, 392.0, 440.0, 466.16, 523.25, 587.33, 622.25, 739.99, 783.99, 880.0]
 
-# --- arrangement v2: uplifting future-pop in A major (no oud, no Hijaz) ---
+# --- arrangement v3: driving tech / electro, E minor, 120 BPM ---
 BEAT = .5
-def supersaw(freqs, dur, g=.05, cutoff=3200, pump=True):
-    n = int(dur * SR); t = T(n); s = np.zeros(n)
-    for f in freqs:
-        for d in (-.012, -.006, -.002, 0, .002, .006, .012):
-            ph = rng.random(); s += ((t * f * (1 + d) + ph) % 1) * 2 - 1
-    s = lp_fast(s, cutoff) / (len(freqs) * 7) ** .5
-    a = np.minimum(1, t / .02) * np.minimum(1, (dur - t) / .08)
-    if pump: a *= .25 + .75 * np.minimum(1, ((t % BEAT) / .22)) ** 1.5
-    return s * a * g
-def piano(f, dur=1.6, g=.22):
-    n = int(dur * SR); t = T(n)
-    s = sum(np.sin(2 * np.pi * f * k * (1 + .0004 * k * k) * t) * k ** -1.3 * np.exp(-t * (1.8 + k * 1.1)) for k in range(1, 9))
-    return s * np.minimum(1, t / .003) * g
-def snare(g=.55):
-    n = int(.3 * SR); t = T(n)
-    s = bp_fast(rng.standard_normal(n), 1500, 7000) * np.exp(-t * 16) + np.sin(2 * np.pi * 190 * t) * np.exp(-t * 30) * .8
+MUS = np.zeros((N, 2))        # melodic bus, gets side-chained to the kick
+def mus(t, sig, g=1.0, pan=0.0, fx=0.0):
+    i = int(t * SR); j = min(N, i + len(sig))
+    if i >= N: return
+    MUS[i:j, 0] += sig[:j - i] * g * (1 - pan); MUS[i:j, 1] += sig[:j - i] * g * (1 + pan)
+    if fx: put(FX, t, sig, g * fx)
+def sawn(f, n, det=(0,)):
+    t = T(n); return sum(((t * f * (1 + d) + .37 * k) % 1) * 2 - 1 for k, d in enumerate(det)) / len(det) ** .5
+def kick2(g=1.0):
+    n = int(.4 * SR); t = T(n); f = 48 + 140 * np.exp(-t * 35)
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 6.5)
+    click = hp_fast(rng.standard_normal(n), 3000) * np.exp(-t * 300) * .5
+    return np.tanh((body + click) * 2.2) * .8 * g
+def clap2(g=1.0):
+    n = int(.35 * SR); t = T(n); s = bp_fast(rng.standard_normal(n), 1000, 5000)
+    e = np.exp(-t * 14); bursts = np.ones(n); bursts[:int(.03 * SR)] = (np.sin(np.linspace(0, 3 * np.pi, int(.03 * SR))) > 0) * 1.0
+    sn = np.sin(2 * np.pi * 200 * t) * np.exp(-t * 35) * .6
+    return (s * e * bursts + sn) * .55 * g
+def ohat():
+    n = int(.22 * SR); return hp_fast(rng.standard_normal(n), 8000) * np.exp(-T(n) * 16) * .22
+def rollbass(f, dur, cutoff=900):
+    n = int(dur * SR); t = T(n); s = sawn(f, n, (-.004, .004)) + .6 * np.sin(2 * np.pi * f / 2 * t)
+    s = lp_fast(s, cutoff) * np.exp(-t * 4)
+    return np.tanh(s * 1.8) * np.minimum(1, t / .004) * np.minimum(1, (dur - t) / .01) * .32
+def arpnote(f, dur, cutoff):
+    n = int(dur * SR); t = T(n); s = sawn(f, n, (-.006, 0, .006))
+    s = lp_fast(s, cutoff) * np.exp(-t * 14)
+    return s * np.minimum(1, t / .002) * .16
+def lead2(f, dur, g=.14):
+    n = int(dur * SR); t = T(n); s = sawn(f, n, (-.01, -.004, .004, .01)) + .5 * sawn(f * 2, n, (0,))
+    s = lp_fast(s, 3800) * np.minimum(1, t / .01) * np.minimum(1, (dur - t) / .05) * (0.75 + .25 * np.exp(-t * 6))
     return s * g
-def sub(f, dur, g=.36):
-    n = int(dur * SR); t = T(n); s = np.sin(2 * np.pi * f * t) + .15 * np.sin(4 * np.pi * f * t)
-    return s * np.minimum(1, t / .008) * np.minimum(1, (dur - t) / .04) * g
-def lead(f, dur=.45, g=.16):
-    n = int(dur * SR); t = T(n); vib = 1 + .004 * np.sin(2 * np.pi * 5.5 * t) * np.minimum(1, t / .2)
-    s = ((t * f * vib) % 1) * 2 - 1 + .6 * np.sign(np.sin(2 * np.pi * f * .5 * t))
-    return lp_fast(s, 2600) * np.minimum(1, t / .01) * np.exp(-t * 2.5) * g
-CH = {'Fm': ([185.0, 220.0, 277.18], 92.50), 'D': ([146.83, 185.0, 220.0], 73.42), 'A': ([220.0, 277.18, 329.63], 110.0), 'E': ([164.81, 207.65, 246.94], 82.41)}
-PROG = ['Fm', 'D', 'A', 'E']
-MEL = [659.25, 554.37, 493.88, 440.0, 493.88, 554.37, 659.25, 739.99]   # hook motif
-def drums(t0, t1, hats16=True, snr=True):
+def padw(freqs, dur, g=.05, cutoff=1800):
+    n = int(dur * SR); s = sum(sawn(f, n, (-.01, -.005, 0, .005, .01)) for f in freqs)
+    s = lp_fast(s, cutoff); t = T(n); return s * np.minimum(1, t / .3) * np.minimum(1, (dur - t) / .3) * g
+def riser(dur, g=.3):
+    n = int(dur * SR); t = T(n); sweep = np.sin(2 * np.pi * np.cumsum(np.linspace(150, 1600, n)) / SR) * .25
+    return (noise_swell(dur, 300, 12000, g=1) * .9 + sweep * np.linspace(0, 1, n) ** 2) * g
+CH = {'Em': [164.81, 196.0, 246.94], 'C': [130.81, 164.81, 196.0], 'G': [196.0, 246.94, 293.66], 'D': [146.83, 185.0, 220.0]}
+ROOT = {'Em': 41.20, 'C': 32.70, 'G': 49.0, 'D': 36.71}
+PROG = ['Em', 'C', 'G', 'D']
+RIFF = [659.25, 0, 783.99, 659.25, 987.77, 0, 880.0, 783.99, 739.99, 0, 659.25, 587.33, 659.25, 0, 0, 0]  # 16ths per 2 bars? (per bar of 4 beats = 8 eighths)
+def drums2(t0, t1, level=2):
     b = 0; t = t0
     while t < t1 - 1e-6:
-        st(t, kick(), .95)
-        if snr and b % 2 == 1: st(t, snare(), 1, fx=.25)
-        if hats16:
-            for k in range(4): st(t + k * .125, hat(), .9 if k % 2 else .5, pan=.3 * ((-1) ** k))
-            if b % 8 == 7: [st(t + .25 + k * .0625, hat(), .7, pan=.3) for k in range(4)]   # hat roll
+        st(t, kick2(), 1)
+        if level >= 1 and b % 2 == 1: st(t, clap2(), 1, fx=.2)
+        if level >= 1: st(t + .25, ohat(), 1, pan=.25)
+        if level >= 2:
+            for k in range(4): st(t + k * .125, hat(), .7 if k % 2 else .35, pan=-.3)
         t += BEAT; b += 1
-def section(t0, nbars, g=.05, bassline=True, piano_g=0):
+def bassline(t0, t1, cutoff=900):
+    t = t0; b = 0
+    while t < t1 - 1e-6:
+        root = ROOT[PROG[int((t - t0) // 2) % 4]] * 2
+        for k in (1, 2, 3): mus(t + k * .125, rollbass(root, .12, cutoff), 1)   # rolling off-beat 16ths
+        t += BEAT; b += 1
+def arp(t0, t1, c0, c1):
+    k = 0; t = t0
+    while t < t1 - 1e-6:
+        ch = CH[PROG[int((t - 6) // 2) % 4]]; notes = [ch[0] * 2, ch[1] * 2, ch[2] * 2, ch[1] * 4]
+        cut = c0 * (c1 / c0) ** ((t - t0) / max(.01, t1 - t0))
+        mus(t, arpnote(notes[k % 4], .14, cut), 1, pan=.45 * (1 if k % 2 else -1), fx=.25)
+        t += .125; k += 1
+def pads(t0, nbars, g=.045):
+    for bar in range(nbars): mus(t0 + bar * 2, padw(CH[PROG[bar % 4]], 2.0, g), 1, fx=.3)
+def riff(t0, nbars=2, g=.14):
     for bar in range(nbars):
-        chord, root = CH[PROG[bar % 4]]; t = t0 + bar * 2
-        st(t, supersaw(chord + [c * 2 for c in chord[:1]], 2.0, g), 1, fx=.25)
-        if bassline:
-            for k in range(4): st(t + k * .5, sub(root, .45), 1)
-        if piano_g: [st(t + k * .5, piano(c * 2, 1.2, piano_g), 1, pan=.2, fx=.3) for k, c in enumerate(chord + chord[:1])]
+        for i, f in enumerate(RIFF[:8] if bar % 2 == 0 else RIFF[8:]):
+            if f: mus(t0 + bar * 2 + i * .25, lead2(f, .23, g), 1, pan=.1, fx=.3)
 def glitch(t, d=.15):
-    n = int(d * SR); x = rng.standard_normal(n); x = np.round(x * 3) / 3; x = bp_fast(x, 800, 6000) * .35
-    st(t, x, 1, pan=(rng.random() - .5))
-# 0–3 hook: tense filtered pad, glitches, error beeps, reverse riser
-st(0, lp_fast(supersaw([92.5, 98.0], 3.0, .06, 600, pump=False), 500), 1)
+    n = int(d * SR); x = np.round(rng.standard_normal(n) * 3) / 3; st(t, bp_fast(x, 800, 6000) * .35, 1, pan=(rng.random() - .5))
+
+# 0–3 intro: filtered arp builds under the glitches, riser into the drop
+arp(0.0, 3.0, 300, 2500)
+mus(0.0, padw(CH['Em'], 3.0, .03, 700), 1)
 for tt in (.9, 1.0, 1.75, 1.85, 2.5, 2.6, 2.7, 2.8): glitch(tt)
-eb = np.sin(2 * np.pi * 660 * T(int(.12 * SR))) * .22; st(1.2, eb); st(1.38, eb)
-st(1.8, noise_swell(1.2, 200, 12000, g=.32), 1, fx=.2)
-# 3–6 drop: big chord stab + impact, piano motif
+eb = np.sin(2 * np.pi * 660 * T(int(.12 * SR))) * .2; st(1.2, eb); st(1.38, eb)
+st(1.5, riser(1.5), 1, fx=.2)
+for k in range(8): st(2.0 + k * .125, clap2(.25 + k * .08), 1)          # snare roll
+# 3 DROP
 st(3.0, impact(), 1.0)
-st(3.0, supersaw([220.0, 277.18, 329.63, 440.0], 3.0, .07, 5000, pump=False) * np.exp(-T(int(3 * SR)) * .6), 1, fx=.4)
-for i, f in enumerate([659.25, 554.37, 440.0, 554.37, 659.25, 880.0]): st(3.5 + i * .33, piano(f, 1.5, .2), 1, pan=.15, fx=.4)
-# 6–30 main groove
-drums(6.0, 30.0)
-section(6.0, 12)
-for tt in (6.2, 6.65, 7.1): st(tt, ping(1318.5), .6, fx=.4)
-for rep in range(3):                     # hook melody every 8 s
-    t0 = 9.0 + rep * 8
-    for i, f in enumerate(MEL): st(t0 + i * .5, lead(f), 1, pan=-.1, fx=.35)
-for k in range(7):                       # accent on each service change
+drums2(3.0, 6.0, 1); bassline(3.0, 6.0, 1400); arp(3.0, 6.0, 3000, 3000); pads(3.0, 2, .05)
+mus(3.0, lead2(987.77, 1.0, .12), 1, fx=.5)
+# 6–9 values
+drums2(6.0, 9.0, 2); bassline(6.0, 9.0, 1100); pads(6.0, 2)
+for tt in (6.2, 6.65, 7.1): st(tt, ping(1318.5), .55, fx=.4)
+# 9–30 services: full drive, riff from 15s, extra energy from 21s
+drums2(9.0, 30.0, 2); bassline(9.0, 30.0, 1300)
+arp(9.0, 21.0, 1200, 4500); arp(21.0, 30.0, 4500, 6000)
+pads(9.0, 11)
+for k in range(3): riff(15.0 + k * 4, 2)
+riff(27.0, 1)
+for k in range(7):
     t0 = 9 + 3 * k
-    st(t0 - .3, whoosh(.6, .35), 1, pan=.4 if k % 2 else -.4)
-    st(t0, piano([880.0, 739.99, 659.25, 554.37, 659.25, 739.99, 880.0][k], 1.2, .18), 1, fx=.4)
+    st(t0 - .5, riser(.5, .18), 1); st(t0, impact()[:int(.6 * SR)], .35)
 for tt in (16.0, 16.25, 16.6): st(tt, tick(), .8)
-for tt in (18.45, 18.8, 19.15): st(tt, ping(1046.5), .45, fx=.3)
-st(22.2, ping(1568), .45, fx=.3)
-for j in range(5): st(28.6 + j * .1, ping(1760 + j * 220), .3, fx=.4)
-# 30–34 breakdown: piano + soft pad
-st(29.7, noise_swell(.5, 6000, 300, rise=False, g=.22), 1)
-for bar in range(2):
-    chord, root = CH[PROG[bar % 4]]; t = 30.0 + bar * 2
-    st(t, supersaw(chord, 2.0, .035, 1500, pump=False), 1, fx=.4)
-    for k, c in enumerate(chord + [chord[1] * 2]): st(t + k * .5, piano(c * 2, 1.6, .2), 1, pan=.2, fx=.45)
-st(33.0, noise_swell(1.0, 400, 12000, g=.3), 1, fx=.2)
-# 34–42 final chorus + ending
-st(34.0, impact(), .7)
-drums(34.0, 41.0)
-section(34.0, 4, g=.055)
-for i, f in enumerate(MEL): st(34.0 + i * .5, lead(f), 1, pan=-.1, fx=.35)
-st(35.3, ping(1760), .7, fx=.4)
-st(39.1, tick(), 1.2); st(39.5, whoosh(.4, .3), 1); st(39.6, ping(2093), .6, fx=.5)
-st(41.0, supersaw([220.0, 277.18, 329.63, 440.0], 1.0, .06, 4000, pump=False) * np.exp(-T(int(SR)) * 2), 1, fx=.5)
-st(41.0, kick(), .8); st(41.0, piano(880.0, 1.0, .2), 1, fx=.5)
+for tt in (18.45, 18.8, 19.15): st(tt, ping(1046.5), .4, fx=.3)
+st(22.2, ping(1568), .4, fx=.3)
+for j in range(5): st(28.6 + j * .1, ping(1760 + j * 220), .28, fx=.4)
+# 30–34 breakdown: no kick, filtered arp + wide pad, riser
+pads(30.0, 2, .06); arp(30.0, 34.0, 600, 3500)
+st(32.0, riser(2.0, .35), 1, fx=.2)
+for k in range(16): st(33.0 + k * .0625, clap2(.15 + k * .04), 1)
+# 34–41 final drop
+st(34.0, impact(), 1.0)
+drums2(34.0, 41.0, 2); bassline(34.0, 41.0, 1500); arp(34.0, 41.0, 5000, 5000); pads(34.0, 4, .05)
+riff(34.0, 2); riff(38.0, 1)
+st(35.3, ping(1760), .6, fx=.4)
+st(39.1, tick(), 1.2); st(39.6, ping(2093), .5, fx=.5)
+# 41 ending hit
+st(41.0, impact(), .8); mus(41.0, padw(CH['Em'] + [329.63], 1.0, .07, 4000) * np.exp(-T(int(SR)) * 2.5), 1, fx=.6)
+
+# side-chain the melodic bus to the kick grid wherever drums play
+sc = np.ones(N); t_ = T(N)
+for a, b in ((3, 30), (34, 41)):
+    i0, i1 = int(a * SR), int(b * SR); ph = (t_[i0:i1] - a) % BEAT
+    sc[i0:i1] = .25 + .75 * np.minimum(1, ph / .18) ** 1.4
+MUS *= sc[:, None]
+MUS[int(30 * SR):int(34 * SR)] *= 2.4   # keep the breakdown present
+MUS[0:int(3 * SR)] *= 1.8
+L += MUS[:, 0]; R += MUS[:, 1]
 # reverb on FX bus
 ir_n = int(2.2 * SR); ir = rng.standard_normal(ir_n) * np.exp(-T(ir_n) * 2.6); ir = lp_fast(ir, 6000); ir /= np.abs(ir).sum() ** .5 * 6
 def conv(x, h):
