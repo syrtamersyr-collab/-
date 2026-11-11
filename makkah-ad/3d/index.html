@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>حمص المصغّرة — مركز مكة 3D</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  html,body{margin:0;background:#000}
+  #wrap{position:relative;width:1080px;height:1920px;overflow:hidden}
+  #wrap canvas{position:absolute;left:0;top:0;width:1080px;height:1920px;display:block}
+</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="wrap"><canvas id="gl" width="1080" height="1920"></canvas><canvas id="ui" width="1080" height="1920"></canvas></div>
+<script type="module">
+// «حمص المصغّرة» — real-time 3D diorama reel for Makkah Technologies. 1080x1920, 36s.
+// Every frame is a pure function of t: window.render(t).
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const W = 1080, H = 1920, DUR = 36;
+const NAVY = 0x02376C, GREEN = 0x50BE1E;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const smooth = p => p * p * (3 - 2 * p);
+const eback = p => { const c1 = 1.7, c3 = c1 + 1; return Math.max(0, 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)); };
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const R = rng(20);
+
+// ---------- renderer ----------
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.92;
+const pmrem = new THREE.PMREMGenerator(renderer);
+const ENV = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+function skyTex(stops) { return canvasTex(16, 512, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); stops.forEach(([o, c]) => gr.addColorStop(o, c)); g.fillStyle = gr; g.fillRect(0, 0, w, h); }); }
+
+// =====================================================================
+//  CITY SCENE
+// =====================================================================
+const city = new THREE.Scene();
+city.background = skyTex([[0, '#020916'], [.45, '#06224a'], [.72, '#1b4a78'], [.86, '#c9784a'], [1, '#2a1a2a']]);
+city.fog = new THREE.Fog(0x0a2244, 55, 150);
+city.environment = ENV; city.environmentIntensity = 0.12;
+const cam = new THREE.PerspectiveCamera(50, W / H, 0.1, 400);
+
+city.add(new THREE.HemisphereLight(0x5f8fd6, 0x1a1420, 0.55));
+const sun = new THREE.DirectionalLight(0xffb37a, 1.9); sun.position.set(-38, 26, 30); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 120 }); sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.04;
+city.add(sun);
+const fill = new THREE.DirectionalLight(0x5aa0ff, 0.35); fill.position.set(30, 20, -20); city.add(fill);
+
+const HDR = (hex, k = 3) => { const m = new THREE.MeshBasicMaterial({ color: hex, toneMapped: false }); m.color.multiplyScalar(k); return m; };
+const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .8, metalness: 0, ...o });
+function box(w, h, d, mat, x = 0, y = 0, z = 0, parent = city) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m; }
+function cyl(rt, rb, h, mat, x = 0, y = 0, z = 0, parent = city, segs = 20) { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, segs), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m; }
+
+// ---- island ----
+const IS = 46;
+box(IS, 3, IS, M(0x0b2748, { roughness: .6 }), 0, -1.5, 0);
+box(IS + .5, .35, IS + .5, HDR(0x66ff3a, 2.2), 0, -1.0, 0).castShadow = false;
+box(IS - 3, 1.6, IS - 3, M(0x061a33), 0, -3.8, 0); box(IS - 9, 1.6, IS - 9, M(0x04142a), 0, -5.4, 0);
+const road = box(IS - .4, .1, IS - .4, M(0x1b2433, { roughness: .95 }), 0, 0.05, 0); road.castShadow = false;
+const PITCH = 8.6, LOT = 6.4, cell = i => i * PITCH;
+const lotMat = M(0x364356, { roughness: .9 });
+const dashMat = new THREE.MeshBasicMaterial({ color: 0xcfd6df });
+for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) { const l = box(LOT + .9, .16, LOT + .9, lotMat, cell(i), .16, cell(j)); l.castShadow = false; }
+for (let k = -2; k <= 1; k++) for (let s = -21; s <= 21; s += 2.4) { const a = cell(k) + PITCH / 2; let d = box(.9, .02, .12, dashMat, s, .115, a); d.castShadow = false; d = box(.12, .02, .9, dashMat, a, .115, s); d.castShadow = false; }
+
+// ---- textures for façades ----
+const WALLS = ['#d8c9ad', '#cdbb9b', '#e2d6bf', '#bfae90', '#c9c2b4', '#d4b998'];
+function facade(color, cols, rows, seed) {
+  const r = rng(seed); const cells = []; for (let i = 0; i < cols * rows; i++) cells.push(r());
+  const map = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = color; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 16) { g.fillStyle = `rgba(0,0,0,${.03 + .03 * ((y / 16) % 2)})`; g.fillRect(0, y, w, 8); }   // ablaq-style banding
+    const cw = w / cols, ch = h / rows;
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) { g.fillStyle = '#1c2836'; g.fillRect(i * cw + cw * .22, j * ch + ch * .22, cw * .56, ch * .56); g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(i * cw + cw * .18, j * ch + ch * .8, cw * .64, ch * .06); }
+  });
+  const emis = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const cw = w / cols, ch = h / rows;
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) { const v = cells[i * rows + j]; if (v < .22) continue; g.fillStyle = v > .8 ? '#bfe0ff' : (v > .5 ? '#ffc777' : '#ffdca0'); g.fillRect(i * cw + cw * .22, j * ch + ch * .22, cw * .56, ch * .56); }
+  });
+  return { map, emis };
+}
+
+// ---- LiteBeam-style antenna ----
+const white = M(0xf2f5f8, { roughness: .35 }), grey = M(0x8fa0b3, { roughness: .5, metalness: .6 });
+function liteBeam(s = 1) {
+  const g = new THREE.Group();
+  const head = new THREE.Group(); g.add(head); head.position.y = 1.5 * s;
+  const panel = new THREE.Mesh(new THREE.CylinderGeometry(2.4 * s, 2.4 * s, 1.15 * s, 40, 1, true, -0.38, 0.76), new THREE.MeshStandardMaterial({ color: 0xf4f6f9, roughness: .4, side: THREE.DoubleSide }));
+  panel.position.z = -2.25 * s; panel.castShadow = true; head.add(panel);
+  // perforation hint
+  const dots = canvasTex(256, 128, (c, w, h) => { c.fillStyle = '#f4f6f9'; c.fillRect(0, 0, w, h); c.fillStyle = '#b9c4d0'; for (let x = 6; x < w; x += 10) for (let y = 6; y < h; y += 10) if (Math.abs(x - w / 2) > 30) { c.beginPath(); c.arc(x, y, 1.8, 0, 7); c.fill(); } });
+  panel.material.map = dots;
+  box(.42 * s, 1.2 * s, .1 * s, white, 0, 0, .17 * s, head);
+  const arm = cyl(.07 * s, .09 * s, .85 * s, white, 0, 0, .6 * s, head, 12); arm.rotation.x = Math.PI / 2;
+  box(.2 * s, .24 * s, .3 * s, white, 0, 0, 1.08 * s, head);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(.045 * s, 12, 12), HDR(0x7dff4a, 2)); led.position.set(0, .14 * s, 1.1 * s); head.add(led);
+  box(.16 * s, .3 * s, .2 * s, grey, 0, 0, -.02 * s, head);
+  cyl(.045 * s, .045 * s, 1.9 * s, grey, 0, .75 * s, -.1 * s, g, 10);
+  g.userData = { head, led, feed: new THREE.Vector3(0, 1.5 * s, 1.1 * s) };
+  return g;
+}
+
+// ---- buildings ----
+const BLD = []; const TOWER_TOP = new THREE.Vector3(0, 17.2, 0);
+const roofMat = M(0x6b6f76, { roughness: .95 }), tankMat = M(0xdfe5ec, { roughness: .5 }), tankCap = M(0x33506f);
+function building(x, z, w, d, h, seed, opts = {}) {
+  const f = facade(WALLS[seed % WALLS.length], Math.max(2, Math.round(w / 1.5)), Math.max(2, Math.round(h / 1.5)), seed);
+  const side = new THREE.MeshStandardMaterial({ map: f.map, emissiveMap: f.emis, emissive: 0xffffff, emissiveIntensity: .06, roughness: .85 });
+  const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, roofMat, roofMat, side, side]);
+  b.position.set(x, h / 2 + .24, z); b.castShadow = b.receiveShadow = true; city.add(b);
+  const top = h + .24;
+  for (const [px, pz, pw, pd] of [[0, d / 2 - .1, w, .2], [0, -d / 2 + .1, w, .2], [w / 2 - .1, 0, .2, d], [-w / 2 + .1, 0, .2, d]]) box(pw, .4, pd, side, x + px, top + .2, z + pz);
+  const rec = { x, z, w, d, h, top, side, litAt: 99 };
+  if (!opts.bare) {
+    for (let k = 0; k < 1 + (seed % 2); k++) { const tx = x - w * .25 + k * .9, tz = z - d * .22; cyl(.38, .38, .75, tankMat, tx, top + .65, tz); cyl(.4, .4, .08, tankCap, tx, top + 1.06, tz); box(.6, .28, .6, grey, tx, top + .14, tz); }
+    const a = liteBeam(opts.hero ? 1.25 : .5); a.position.set(x + w * .22, top, z + d * .2); city.add(a);
+    a.userData.head.lookAt(TOWER_TOP.x, a.position.y + 1.5 * (opts.hero ? 1.25 : .5) + (TOWER_TOP.y - top) * .12, TOWER_TOP.z);
+    a.updateMatrixWorld(true); rec.ant = a; rec.feed = a.userData.head.localToWorld(new THREE.Vector3(0, 0, 1.1 * (opts.hero ? 1.25 : .5)));
+  }
+  BLD.push(rec); return rec;
+}
+const HERO = [2, 2], SOLAR = [-1, 1], MOSQUE = [-2, -1], CLOCK = [1, -2];
+let heroB, solarB;
+for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+  if (i === 0 && j === 0) continue;
+  if (i === MOSQUE[0] && j === MOSQUE[1]) continue;
+  if (i === CLOCK[0] && j === CLOCK[1]) continue;
+  if (i === 0 && j === 1) continue;   // plaza in front of the shop
+  const seed = (i + 3) * 7 + (j + 3) * 13;
+  if (i === HERO[0] && j === HERO[1]) { heroB = building(cell(i), cell(j), 5.6, 5.6, 5.2, seed, { hero: true }); continue; }
+  if (i === SOLAR[0] && j === SOLAR[1]) { solarB = building(cell(i), cell(j), 6.0, 5.6, 3.8, seed, { bare: true }); continue; }
+  const h = 3.2 + R() * 5.2 + (Math.abs(i) + Math.abs(j) < 2 ? 0 : 0);
+  building(cell(i) + (R() - .5) * .5, cell(j) + (R() - .5) * .5, 4.4 + R() * 1.6, 4.4 + R() * 1.6, h, seed);
+}
+
+// ---- Makkah shop + tower (centre) ----
+const shopSide = M(0xf3f6fa, { roughness: .6 });
+const shop = box(6.4, 4.6, 6.0, shopSide, 0, 2.3 + .24, 0);
+box(6.6, .35, 6.2, M(NAVY, { roughness: .5 }), 0, 4.84 + .18, 0);
+const signTex = canvasTex(1024, 256, (g, w, h) => { g.fillStyle = '#02376C'; g.fillRect(0, 0, w, h); g.fillStyle = '#50BE1E'; g.fillRect(0, h - 22, w, 22); });
+const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.0, 1.5), new THREE.MeshStandardMaterial({ map: signTex, emissiveMap: signTex, emissive: 0xffffff, emissiveIntensity: .42, roughness: .5 }));
+sign.position.set(0, 3.75, 3.02); city.add(sign);
+const awn = box(6.2, .14, 1.1, M(GREEN, { roughness: .6 }), 0, 2.85, 3.5); awn.rotation.x = .28;
+const glass = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 2.2), new THREE.MeshStandardMaterial({ color: 0x9fd0ff, emissive: 0xffd9a0, emissiveIntensity: .32, roughness: .2 })); glass.position.set(0, 1.5, 3.02); city.add(glass);
+for (const sx of [-1.3, 0, 1.3]) box(.08, 2.2, .06, M(NAVY), sx, 1.5, 3.05);
+// tower
+const steel = M(0xdfe6ee, { roughness: .4, metalness: .7 });
+const tw = new THREE.Group(); tw.position.set(0, 5.2, 0); city.add(tw);
+for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { const leg = cyl(.07, .09, 12.2, steel, 0, 0, 0, tw, 8); leg.position.set(sx * .5, 6, sz * .5); leg.rotation.z = -sx * .058; leg.rotation.x = sz * .058; }
+for (let k = 0; k < 9; k++) { const y = .6 + k * 1.35, s = lerp(.86, .18, k / 9); const ring = new THREE.Mesh(new THREE.TorusGeometry(s * 1.2, .035, 6, 4), steel); ring.rotation.x = Math.PI / 2; ring.rotation.z = Math.PI / 4; ring.position.y = y; ring.castShadow = true; tw.add(ring); }
+for (let k = 0; k < 3; k++) { const a = k * Math.PI * 2 / 3 + .5; const p = box(.34, 1.3, .12, white, Math.cos(a) * .55, 10.2, Math.sin(a) * .55, tw); p.rotation.y = -a + Math.PI / 2; }
+const beacon = new THREE.Mesh(new THREE.SphereGeometry(.3, 24, 24), HDR(0x8dff5a, 4)); beacon.position.copy(TOWER_TOP); city.add(beacon);
+const beaconL = new THREE.PointLight(0x66ff33, 60, 40, 1.8); beaconL.position.copy(TOWER_TOP); city.add(beaconL);
+const RINGS = []; for (let k = 0; k < 3; k++) { const r = new THREE.Mesh(new THREE.TorusGeometry(1, .03, 8, 64), new THREE.MeshBasicMaterial({ color: 0x7dff4a, transparent: true, toneMapped: false })); r.rotation.x = Math.PI / 2; r.position.copy(TOWER_TOP); city.add(r); RINGS.push(r); }
+
+// ---- CCTV on the shop ----
+const cctv = new THREE.Group(); cctv.position.set(3.0, 3.3, 3.25); city.add(cctv);
+box(.18, .18, .5, white, 0, 0, -.1, cctv);
+const cctvHead = new THREE.Group(); cctvHead.position.set(0, -.1, .25); cctv.add(cctvHead);
+const body = cyl(.16, .16, .7, white, 0, 0, .3, cctvHead, 20); body.rotation.x = Math.PI / 2;
+const lens = cyl(.11, .11, .06, M(0x0b1b30, { roughness: .1, metalness: .8 }), 0, 0, .67, cctvHead, 20); lens.rotation.x = Math.PI / 2;
+const cone = new THREE.Mesh(new THREE.ConeGeometry(2.6, 8, 40, 1, true), new THREE.MeshBasicMaterial({ color: 0x66ff3a, transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+cone.rotation.x = -Math.PI / 2; cone.position.z = 4.7; cctvHead.add(cone);
+const scanSpot = new THREE.SpotLight(0x66ff3a, 0, 14, .32, .5, 1.2); scanSpot.position.set(0, 0, .7); cctvHead.add(scanSpot); scanSpot.target.position.set(0, 0, 8); cctvHead.add(scanSpot.target);
+const recDot = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 10), HDR(0xff3b3b, 4)); recDot.position.set(.1, .1, .64); cctvHead.add(recDot);
+
+// ---- solar roof + AC ----
+const pvTex = canvasTex(256, 160, (g, w, h) => { g.fillStyle = '#0c2f66'; g.fillRect(0, 0, w, h); g.strokeStyle = '#7fb0ee'; g.lineWidth = 3; for (let x = 0; x <= w; x += 32) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); } for (let y = 0; y <= h; y += 40) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); } });
+const pvMat = new THREE.MeshStandardMaterial({ map: pvTex, roughness: .12, metalness: .75, envMapIntensity: 3 });
+const PV = [];
+for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
+  const g = new THREE.Group(); g.position.set(solarB.x - 1.75 + c * 1.75, solarB.top + .55, solarB.z - 1.2 + r * 1.9); city.add(g);
+  const p = box(1.6, .06, 1.0, [white, white, pvMat, white, white, white], 0, 0, 0, g); g.rotation.x = .5; PV.push(p);
+  box(.06, .5, .06, grey, solarB.x - 1.75 + c * 1.75, solarB.top + .25, solarB.z - 1.55 + r * 1.9);
+}
+const ac = new THREE.Group(); ac.position.set(solarB.x + 2.2, solarB.top + .45, solarB.z + 2.0); city.add(ac);
+box(1.3, .85, .55, white, 0, 0, 0, ac);
+const fanRing = cyl(.34, .34, .04, M(0x26323f), -.2, 0, .29, ac, 28); fanRing.rotation.x = Math.PI / 2;
+const fan = new THREE.Group(); fan.position.set(-.2, 0, .32); ac.add(fan);
+for (let k = 0; k < 4; k++) { const bl = box(.09, .3, .02, M(0xaab6c4), 0, .15, 0, fan); const pv = new THREE.Group(); pv.rotation.z = k * Math.PI / 2; fan.remove(bl); pv.add(bl); fan.add(pv); }
+for (let k = 0; k < 4; k++) box(.36, .04, .02, M(0x7e8c9b), .38, -.25 + k * .16, .285, ac);
+
+// ---- Homs landmarks ----
+const stone = M(0xe6dcc6, { roughness: .8 }), basalt = M(0x3a3d44, { roughness: .8 }), domeMat = M(0xbfc7cf, { roughness: .3, metalness: .7 });
+{ const x = cell(MOSQUE[0]), z = cell(MOSQUE[1]);
+  box(6.2, 2.6, 5.4, stone, x, 1.54, z); for (let k = 0; k < 3; k++) box(6.24, .22, 5.44, basalt, x, .7 + k * .8, z);
+  const dome = (dx, dz, r) => { const d = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 20, 0, Math.PI * 2, 0, Math.PI / 2), domeMat); d.position.set(x + dx, 2.84, z + dz); d.castShadow = true; city.add(d); cyl(.03, .03, .5, domeMat, x + dx, 2.84 + r + .2, z + dz, city, 8); };
+  dome(0, 0, 1.7); dome(-2.1, 1.6, .8); dome(2.1, 1.6, .8); dome(-2.1, -1.6, .8); dome(2.1, -1.6, .8);
+  for (const sx of [-1, 1]) { cyl(.3, .36, 8.5, stone, x + sx * 3.3, 4.5, z + 2.5, city, 16); cyl(.46, .46, .2, stone, x + sx * 3.3, 7.2, z + 2.5, city, 16); const c = new THREE.Mesh(new THREE.ConeGeometry(.34, 1.5, 16), M(0x4a5560, { metalness: .5, roughness: .4 })); c.position.set(x + sx * 3.3, 9.5, z + 2.5); c.castShadow = true; city.add(c); for (let k = 0; k < 6; k++) cyl(.31, .31, .18, basalt, x + sx * 3.3, 1 + k * 1.1, z + 2.5, city, 16); }
+}
+const clockTex = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#e6dcc6'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff8e2'; g.beginPath(); g.arc(128, 128, 100, 0, 7); g.fill(); g.strokeStyle = '#2a2a2a'; g.lineWidth = 8; g.stroke(); for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; g.beginPath(); g.moveTo(128 + Math.cos(a) * 80, 128 + Math.sin(a) * 80); g.lineTo(128 + Math.cos(a) * 94, 128 + Math.sin(a) * 94); g.stroke(); } g.lineWidth = 10; g.beginPath(); g.moveTo(128, 128); g.lineTo(128 + 50, 128 - 30); g.moveTo(128, 128); g.lineTo(128 - 10, 128 - 76); g.stroke(); });
+{ const x = cell(CLOCK[0]), z = cell(CLOCK[1]); box(2.2, 8.5, 2.2, stone, x, 4.5, z); for (let k = 0; k < 5; k++) box(2.24, .2, 2.24, basalt, x, 1 + k * 1.3, z);
+  const cm = new THREE.MeshStandardMaterial({ map: clockTex, emissiveMap: clockTex, emissive: 0xffffff, emissiveIntensity: .4 });
+  box(2.6, 2.4, 2.6, [cm, cm, stone, stone, cm, cm], x, 9.95, z); const cap = new THREE.Mesh(new THREE.ConeGeometry(1.9, 1.5, 4), basalt); cap.rotation.y = Math.PI / 4; cap.position.set(x, 11.9, z); cap.castShadow = true; city.add(cap); }
+
+// ---- plaza ----
+{ const pz = cell(1); const pl = box(LOT + .9, .1, LOT + .9, M(0x4a5b6e, { roughness: .9 }), 0, .3, pz); pl.castShadow = false;
+  const ringm = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, .25, 40), M(0xdfe5ec)); ringm.position.set(0, .45, pz); ringm.castShadow = ringm.receiveShadow = true; city.add(ringm);
+  const water = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, .27, 40), new THREE.MeshStandardMaterial({ color: 0x2b7fbf, roughness: .08, metalness: .6 })); water.position.set(0, .46, pz); city.add(water);
+  for (const [tx, tz] of [[-2.4, -2.2], [2.4, -2.2], [-2.4, 2.2], [2.4, 2.2], [-2.6, 0], [2.6, 0]]) { cyl(.07, .09, .9, M(0x5b4030), tx, .75, pz + tz, city, 8); const c = new THREE.Mesh(new THREE.IcosahedronGeometry(.62, 1), M(0x2f7d3a, { roughness: .9 })); c.position.set(tx, 1.6, pz + tz); c.castShadow = true; city.add(c); }
+  for (const bx of [-1.2, 1.2]) box(1.0, .12, .35, M(0x8a5f3e), bx, .62, pz - 2.4); }
+// ---- trees, lamps, cars ----
+const leaf = M(0x2f7d3a, { roughness: .9 }), trunk = M(0x5b4030);
+const LAMPS = [];
+for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+  const x = cell(i) + LOT / 2 + .15, z = cell(j) + LOT / 2 + .15;
+  if (R() < .6) { cyl(.06, .08, .7, trunk, x, .55, z, city, 8); const c = new THREE.Mesh(new THREE.IcosahedronGeometry(.48 + R() * .2, 1), leaf); c.position.set(x, 1.25, z); c.castShadow = true; city.add(c); }
+  const lx = cell(i) - LOT / 2 - .15, lz = cell(j) + LOT / 2 + .15;
+  cyl(.03, .04, 1.9, grey, lx, 1.15, lz, city, 6); const b = new THREE.Mesh(new THREE.SphereGeometry(.1, 10, 10), HDR(0xffd28a, 3)); b.position.set(lx, 2.15, lz); city.add(b); LAMPS.push(b);
+}
+const CARS = [];
+for (let k = 0; k < 7; k++) { const g = new THREE.Group(); const col = [0xd94a3d, 0xf2f2f2, 0x2f6fd0, 0xf0b429, 0x1f2a36][k % 5]; box(.95, .3, .5, M(col, { roughness: .35, metalness: .4 }), 0, .32, 0, g); box(.5, .24, .44, M(0x1c2836, { roughness: .2 }), -.05, .58, 0, g);
+  for (const s of [-.16, .16]) { const hl = new THREE.Mesh(new THREE.SphereGeometry(.05, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfff2c0, toneMapped: false })); hl.position.set(.49, .34, s); g.add(hl); const tl = new THREE.Mesh(new THREE.SphereGeometry(.04, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3020, toneMapped: false })); tl.position.set(-.49, .34, s); g.add(tl); }
+  city.add(g); CARS.push({ g, lane: (k % 4) - 2, axis: k % 2, speed: 2.2 + R() * 1.6, off: R() * 44, dir: k % 3 ? 1 : -1 }); }
+
+// ---- stars ----
+{ const n = 500, pos = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const a = R() * 6.283, e = .15 + R() * 1.2, r = 180; pos[i * 3] = Math.cos(a) * Math.cos(e) * r; pos[i * 3 + 1] = Math.sin(e) * r; pos[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); city.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffffff, size: .7, sizeAttenuation: true, fog: false, transparent: true, opacity: .8 }))); }
+
+// ---- signal beams tower → rooftops ----
+const beamMat = HDR(0x78ff46, 1.9);
+const BEAMS = [];
+BLD.filter(b => b.feed).sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z)).forEach((b, i) => {
+  const mid = TOWER_TOP.clone().add(b.feed).multiplyScalar(.5); mid.y += 4 + Math.hypot(b.x, b.z) * .22;
+  const curve = new THREE.QuadraticBezierCurve3(TOWER_TOP, mid, b.feed);
+  const geo = new THREE.TubeGeometry(curve, 64, b === heroB ? .06 : .045, 6); const mesh = new THREE.Mesh(geo, beamMat); mesh.frustumCulled = false; city.add(mesh);
+  const pulse = new THREE.Mesh(new THREE.SphereGeometry(.13, 10, 10), HDR(0xe8ffd8, 3)); city.add(pulse);
+  const t0 = 5.2 + i * .27; b.litAt = t0 + .55; BEAMS.push({ curve, geo, mesh, pulse, t0, total: 64 * 6 * 6 });
+});
+solarB.litAt = 8.2;
+
+// ---- camera path ----
+const HEROA = new THREE.Vector3(heroB.ant.position.x, heroB.top + 1.9, heroB.ant.position.z);
+function orbit(t) { const a = 3.25 + t * .19; return new THREE.Vector3(HEROA.x + Math.cos(a) * 5.4, HEROA.y + .7 + t * .2, HEROA.z + Math.sin(a) * 5.4); }
+const KEYS = [
+  { t: 4.0, p: orbit(4.0), l: HEROA.clone() },
+  { t: 7.6, p: new THREE.Vector3(44, 27, 40), l: new THREE.Vector3(3, 6.5, 2) },
+  { t: 11.0, p: new THREE.Vector3(22, 15, 34), l: new THREE.Vector3(0, 6, 0) },
+  { t: 13.4, p: new THREE.Vector3(7.2, 4.0, 13.4), l: new THREE.Vector3(2.0, 3.0, 3.3) },
+  { t: 16.0, p: new THREE.Vector3(3.2, 3.3, 11.8), l: new THREE.Vector3(1.4, 3.0, 3.2) },
+  { t: 18.4, p: new THREE.Vector3(-3.5, 8.6, 17.5), l: new THREE.Vector3(solarB.x, solarB.top + .5, solarB.z) },
+  { t: 21.0, p: new THREE.Vector3(-13.5, 6.6, 15.5), l: new THREE.Vector3(solarB.x + .6, solarB.top + .4, solarB.z + .4) },
+  { t: 24.0, p: new THREE.Vector3(-30, 30, 34), l: new THREE.Vector3(0, 5, 0) },
+  { t: 27.0, p: new THREE.Vector3(14, 40, 44), l: new THREE.Vector3(0, 7, 0) },
+  { t: 28.8, p: new THREE.Vector3(.6, 18.4, 3.2), l: TOWER_TOP.clone() },
+];
+const posCurve = new THREE.CatmullRomCurve3(KEYS.map(k => k.p), false, 'centripetal');
+const lookCurve = new THREE.CatmullRomCurve3(KEYS.map(k => k.l), false, 'centripetal');
+function camAt(t) {
+  if (t <= 4) { cam.position.copy(orbit(t)); cam.lookAt(HEROA); return; }
+  let i = 0; while (i < KEYS.length - 2 && t > KEYS[i + 1].t) i++;
+  const s = seg(t, KEYS[i].t, KEYS[i + 1].t), se = lerp(s, smooth(s), .55), u = (i + se) / (KEYS.length - 1);
+  cam.position.copy(posCurve.getPoint(u)); cam.lookAt(lookCurve.getPoint(u));
+}
+
+function updateCity(t) {
+  camAt(t);
+  // beacon + pulse rings
+  beaconL.intensity = 50 + 30 * Math.sin(t * 6); beacon.scale.setScalar(1 + .15 * Math.sin(t * 6));
+  RINGS.forEach((r, k) => { const q = ((t * .55 + k / 3) % 1); const on = t > 4.6 ? 1 : 0; r.scale.setScalar(.5 + q * 9); r.material.opacity = (1 - q) * .8 * on; });
+  // beams
+  for (const b of BEAMS) {
+    const p = eout(seg(t, b.t0, b.t0 + .6)); b.mesh.visible = p > 0; b.geo.setDrawRange(0, Math.floor(64 * p) * 36);
+    const q = ((t - b.t0) * .8) % 1; b.pulse.visible = p >= 1; if (p >= 1) b.pulse.position.copy(b.curve.getPoint(q));
+  }
+  // windows light up when the signal lands
+  for (const b of BLD) { const l = eout(seg(t, b.litAt, b.litAt + .8)); b.side.emissiveIntensity = .04 + 1.25 * l; }
+  // hero LED blink
+  heroB.ant.userData.led.scale.setScalar(Math.sin(t * 9) > 0 ? 1.25 : .7);
+  // CCTV sweep
+  cctvHead.rotation.y = Math.sin(t * 1.3) * .55 + .15; cctvHead.rotation.x = .28;
+  const scan = seg(t, 11.2, 12.2) * (1 - seg(t, 16.6, 17.4)); cone.material.opacity = .16 * scan; scanSpot.intensity = 120 * scan; recDot.visible = Math.sin(t * 8) > -.3;
+  // fan + PV glint + cars + lamps
+  fan.rotation.z = t * 14;
+  pvMat.envMapIntensity = 3 + 4 * Math.max(0, Math.sin(t * 1.6 - 1));
+  for (const c of CARS) { const s = ((c.off + t * c.speed * c.dir) % 44 + 44) % 44 - 22, lane = cell(c.lane) + PITCH / 2 + (c.dir > 0 ? .45 : -.45); if (c.axis) { c.g.position.set(s, .12, lane); c.g.rotation.y = c.dir > 0 ? 0 : Math.PI; } else { c.g.position.set(lane, .12, s); c.g.rotation.y = c.dir > 0 ? -Math.PI / 2 : Math.PI / 2; } }
+  sign.material.emissiveIntensity = .42 + .05 * Math.sin(t * 3);
+}
+
+// =====================================================================
+//  STUDIO SCENE (medallion)
+// =====================================================================
+const studio = new THREE.Scene();
+studio.background = skyTex([[0, '#01060f'], [.5, '#03224a'], [1, '#01060f']]);
+studio.environment = ENV; studio.environmentIntensity = .5;
+const cam2 = new THREE.PerspectiveCamera(42, W / H, 0.1, 200);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(60, 64), new THREE.MeshStandardMaterial({ color: 0x031a36, roughness: .28, metalness: .7 })); floor.rotation.x = -Math.PI / 2; floor.position.y = -1.2; floor.receiveShadow = true; studio.add(floor);
+const key = new THREE.SpotLight(0xffffff, 260, 60, .5, .6, 1.6); key.position.set(-8, 16, 12); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.target.position.set(0, 6, 0); studio.add(key, key.target);
+const rim = new THREE.PointLight(0x66ff33, 160, 40, 1.6); rim.position.set(5, 7, -6); studio.add(rim);
+const rim2 = new THREE.PointLight(0x3c8cff, 110, 40, 1.6); rim2.position.set(-7, 3, -5); studio.add(rim2);
+const medal = new THREE.Group(); studio.add(medal);
+let logoTex;
+const chrome = new THREE.MeshStandardMaterial({ color: 0xf2f5f8, metalness: 1, roughness: .16 });
+const greenMetal = new THREE.MeshStandardMaterial({ color: 0x48c81c, metalness: .9, roughness: .22, emissive: 0x1a6608, emissiveIntensity: .25 });
+function buildMedal() {
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(3.05, 3.05, .42, 96), chrome); disc.rotation.x = Math.PI / 2; disc.castShadow = true; medal.add(disc);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(3.12, .16, 24, 120), greenMetal); ring.castShadow = true; medal.add(ring);
+  const face = new THREE.Mesh(new THREE.CircleGeometry(2.92, 96), new THREE.MeshStandardMaterial({ map: logoTex, roughness: .35, metalness: .1 })); face.position.z = .215; medal.add(face);
+  const back = new THREE.Mesh(new THREE.CircleGeometry(2.92, 96), new THREE.MeshStandardMaterial({ color: NAVY, roughness: .3, metalness: .6 })); back.position.z = -.215; back.rotation.y = Math.PI; medal.add(back);
+  const face2 = face.clone(); face2.position.z = -.216; face2.rotation.y = Math.PI; medal.add(face2);
+}
+const DUST = (() => { const n = 260, pos = new Float32Array(n * 3), r = rng(8); for (let i = 0; i < n; i++) { pos[i * 3] = (r() - .5) * 26; pos[i * 3 + 1] = r() * 20 - 2; pos[i * 3 + 2] = (r() - .5) * 20 - 3; } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); const p = new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9dff7a, size: .09, transparent: true, opacity: .6, toneMapped: false })); studio.add(p); return p; })();
+function updateStudio(t) {
+  const u = t - 28.8;
+  const sp = eout(seg(u, .1, 2.4));
+  medal.rotation.y = lerp(-Math.PI * 3, 0, sp) + Math.sin(u * .9) * .22 * sp;
+  medal.rotation.x = Math.sin(u * .7) * .05;
+  medal.position.set(0, lerp(13, 6.4, eout(seg(u, 0, 1.6))) + Math.sin(u * 1.3) * .08, 0);
+  medal.scale.setScalar(lerp(.6, 1, eout(seg(u, 0, 1.6))));
+  cam2.position.set(Math.sin(u * .25) * .8, 2.6, 20 - seg(u, 0, 7) * 1.2); cam2.lookAt(0, 3.0, 0);
+  key.position.x = -8 + Math.sin(u * .8) * 6; rim.intensity = 160 + 60 * Math.sin(u * 2);
+  DUST.position.y = (u * .25) % 2; DUST.rotation.y = u * .03;
+}
+
+// ---------- post ----------
+const composer = new EffectComposer(renderer);
+const rp = new RenderPass(city, cam); composer.addPass(rp);
+const bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), .6, .55, 1.15); composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ---------- 2D overlay ----------
+const ui = document.getElementById('ui').getContext('2d');
+const EMOJI = '"Noto Color Emoji"', DISPLAY = `"Readex Pro","IBM Plex Sans Arabic",${EMOJI},sans-serif`, BODY = `"IBM Plex Sans Arabic",${EMOJI},sans-serif`;
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+function words(text, x, y, size, t, tin, tout, o = {}) {
+  if (t < tin || t > tout + .5) return; const c = ui;
+  c.save(); c.font = `${o.weight || 700} ${size}px ${o.font || DISPLAY}`; c.direction = 'rtl'; c.textAlign = 'right'; c.textBaseline = 'middle';
+  const ws = text.split(' '), sp = c.measureText(' ').width, wd = ws.map(w => c.measureText(w).width);
+  let cx = x + (wd.reduce((a, b) => a + b, 0) + sp * (ws.length - 1)) / 2; const outP = eio(seg(t, tout, tout + .4));
+  ws.forEach((w, i) => { const p = eout(seg(t, tin + i * .09, tin + i * .09 + .45)), a = p * (1 - outP); if (a > .003) { c.globalAlpha = a; c.filter = `blur(${((1 - p) * 12 + outP * 10).toFixed(1)}px)`; c.shadowColor = 'rgba(0,6,16,.75)'; c.shadowBlur = 30; c.fillStyle = (o.colors && o.colors[i]) || o.color || '#F3F6FA'; c.fillText(w, cx, y + (1 - p) * 40 - outP * 24); } cx -= wd[i] + sp; });
+  c.restore();
+}
+function chip(text, y, t, tin, tout) { const p = eback(seg(t, tin, tin + .4)) * (1 - seg(t, tout, tout + .3)); if (p <= 0) return; const c = ui; c.save(); c.font = `700 30px ${BODY}`; c.direction = 'rtl'; const w = c.measureText(text).width + 56; c.translate(W / 2, y); c.scale(p, p); c.fillStyle = '#50BE1E'; rr(c, -w / 2, -28, w, 56, 28); c.fill(); c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 0, 2); c.restore(); }
+function label(text, x, y, size, col, weight = 700, font = DISPLAY, align = 'center', dir = 'rtl') { const c = ui; c.save(); c.font = `${weight} ${size}px ${font}`; c.direction = dir; c.textAlign = align; c.textBaseline = 'middle'; c.fillStyle = col; c.fillText(text, x, y); c.restore(); }
+function overlay(t) {
+  const c = ui; c.clearRect(0, 0, W, H);
+  // top + bottom cinematic shade for legibility
+  let g = c.createLinearGradient(0, 0, 0, 760); g.addColorStop(0, 'rgba(1,8,20,.78)'); g.addColorStop(1, 'rgba(1,8,20,0)'); c.fillStyle = g; c.fillRect(0, 0, W, 760);
+  g = c.createLinearGradient(0, H - 520, 0, H); g.addColorStop(0, 'rgba(1,8,20,0)'); g.addColorStop(1, 'rgba(1,8,20,.7)'); c.fillStyle = g; c.fillRect(0, H - 520, W, 520);
+  chip('إنترنت هوائي', 300, t, .5, 3.5); words('إنترنت هوائي…', W / 2, 400, 96, t, .7, 3.5); words('بمستوى تاني', W / 2, 520, 110, t, 1.3, 3.5, { color: '#7BE04A' });
+  chip('تغطية', 300, t, 5.4, 10.4); words('تغطية بتوصل', W / 2, 400, 96, t, 5.6, 10.4); words('لحارتك', W / 2, 520, 120, t, 6.2, 10.4, { color: '#7BE04A' });
+  chip('مراقبة', 300, t, 11.8, 15.6); words('كاميرات مراقبة', W / 2, 400, 96, t, 12.0, 15.6); words('ذكية بدقة عالية', W / 2, 520, 92, t, 12.6, 15.6, { color: '#7BE04A' });
+  chip('طاقة', 300, t, 17.0, 20.6); words('طاقة شمسية', W / 2, 400, 100, t, 17.2, 20.6); words('وتكييف', W / 2, 520, 116, t, 17.8, 20.6, { color: '#7BE04A' });
+  words('كل الحلول', W / 2, 380, 104, t, 22.2, 26.6); words('من مكان واحد', W / 2, 500, 104, t, 22.8, 26.6, { color: '#7BE04A' });
+  // dive flash
+  const f = Math.max(seg(t, 28.2, 28.8) ** 3, 1 - seg(t, 28.8, 29.5)) * (t > 28.2 && t < 29.5 ? 1 : 0);
+  if (f > 0) { c.save(); c.fillStyle = `rgba(215,255,195,${f})`; c.fillRect(0, 0, W, H); c.restore(); }
+  // outro text
+  if (t > 29.6) {
+    words('مركز مكة للتقنيات', W / 2, 1060, 84, t, 30.6, 99); words('حمص', W / 2, 1160, 70, t, 31.0, 99, { color: '#7BE04A' });
+    const u = t - 31.6, pp = eback(seg(u, 0, .5));
+    if (pp > 0) { c.save(); c.globalAlpha = clamp(pp); c.translate(540, 1300); c.scale(lerp(.8, 1, pp), lerp(.8, 1, pp)); c.fillStyle = '#fff'; c.shadowColor = 'rgba(0,0,0,.45)'; c.shadowBlur = 34; rr(c, -380, -66, 760, 132, 66); c.fill(); c.shadowBlur = 0; c.fillStyle = '#50BE1E'; c.beginPath(); c.arc(-300, 0, 46, 0, 7); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 9; c.lineCap = 'round'; c.beginPath(); c.arc(-300, 0, 20, Math.PI * .6, Math.PI * 1.45); c.stroke(); c.restore(); c.save(); c.globalAlpha = clamp(pp); label('0982 621 531', 590, 1304, 78, '#02376C', 700, BODY, 'center', 'ltr'); c.restore(); }
+    words('حمص – القصور – خلف جامع حمود الناصر', W / 2, 1420, 42, t, 32.4, 99, { weight: 500, font: BODY });
+    words('اكتب نقطة (.) بالتعليقات 💬', W / 2, 1500, 44, t, 33.2, 99, { color: '#7BE04A' });
+  }
+  // vignette
+  g = c.createRadialGradient(W / 2, H * .5, H * .32, W / 2, H * .5, H * .78); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,3,10,.5)'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+  if (t > 35.5) { c.fillStyle = `rgba(1,6,15,${seg(t, 35.5, 36) * .7})`; c.fillRect(0, 0, W, H); }
+}
+
+function render(t) {
+  if (t < 28.8) { updateCity(t); rp.scene = city; rp.camera = cam; bloom.strength = .6; }
+  else { updateStudio(t); rp.scene = studio; rp.camera = cam2; bloom.strength = .45; }
+  composer.render(); overlay(t);
+}
+window.ready = (async () => {
+  const probe = 'مكة abc 0.9… #:-%';
+  await Promise.all(['400 80px "Readex Pro"', '700 80px "Readex Pro"', '500 40px "IBM Plex Sans Arabic"', '700 40px "IBM Plex Sans Arabic"'].map(f => document.fonts.load(f, probe)).concat([document.fonts.load('40px "Noto Color Emoji"', '💬')]));
+  logoTex = await new THREE.TextureLoader().loadAsync('assets/logo.webp'); logoTex.colorSpace = THREE.SRGBColorSpace; logoTex.anisotropy = 8;
+  buildMedal();
+  // shop sign needs the fonts + logo
+  const img = logoTex.image; const c = signTex.image.getContext('2d');
+  c.fillStyle = '#02376C'; c.fillRect(0, 0, 1024, 256); c.fillStyle = '#50BE1E'; c.fillRect(0, 234, 1024, 22);
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(140, 122, 104, 0, 7); c.fill(); c.drawImage(img, 36, 18, 208, 208);
+  c.font = `700 124px "Readex Pro"`; c.direction = 'rtl'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#fff'; c.fillText('مركز مكة', 630, 118);
+  signTex.needsUpdate = true;
+  render(0); render(30); await document.fonts.ready;
+  return true;
+})();
+window.render = render;
+</script>
+</body>
+</html>
