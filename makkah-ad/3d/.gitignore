@@ -2,3 +2,5 @@ node_modules
 package-lock.json
 seg
 assets/video_silent.mp4
+assets/music.wav
+assets/mix.wav

@@ -97,7 +97,6 @@ def drone(d, f=55, g=.1):
     return s * np.minimum(1, t / 1.5) * np.minimum(1, (d - t) / 1.5) * g
 def air(d, g=.05): n = int(d * SR); return bp_fast(rng.standard_normal(n), 200, 1200) * np.minimum(1, T(n) / 2) * np.minimum(1, (d - T(n)) / 1) * g
 def zip_(g=.22): return sweep(500, 2600, .22, g)
-st(0, drone(28.8), 1, fx=.3); st(0, air(28.8), 1)
 for k in range(8): st(.5 + k * .35, ping(2637)[:int(.08 * SR)], .25, pan=.2)          # antenna LED
 st(3.6, whoosh(1.6, .45), 1, pan=-.3)                                                   # pull back
 for k in range(12): st(4.6 + k * 1.8, sweep(180, 90, 1.2, .12), 1, fx=.4)               # tower pulses
@@ -111,7 +110,6 @@ st(21.2, whoosh(2.0, .5), 1)                                                    
 st(22.3, impact()[:int(1.5 * SR)], .45); st(22.3, bell(659.25, 3), .5, fx=.6)
 st(26.6, noise_swell(2.2, 200, 12000, g=.4), 1, fx=.2); st(26.8, sweep(120, 900, 2.0, .16), 1)
 st(28.8, impact(), 1.0); st(28.8, bell(587.33, 3.5), .7, fx=.7); st(28.8, bell(880, 3.5), .45, fx=.7)
-st(28.8, drone(7.2, 73.42, .08), 1, fx=.3)
 for k in range(5): st(29.0 + k * .32 * (1 + k * .25), whoosh(.35, .3 - k * .04), 1, pan=.4 * ((-1) ** k))   # medallion spin
 st(31.6, ping(1760), .7, fx=.5); st(32.4, ping(1318.5), .4, fx=.4); st(33.2, ping(2093), .5, fx=.5)
 # reverb on FX bus
