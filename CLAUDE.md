@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## لغة التواصل (إلزامي)
+- تكلّم مع المستخدم **دائماً بالعربية** في كل الردود والأسئلة والملخصات، مهما كانت لغة الأدوات أو الملفات.
+- المصطلحات التقنية وأسماء الملفات والأوامر تبقى كما هي داخل النص العربي.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
