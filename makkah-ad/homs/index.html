@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>من قلب حمص — مركز مكة</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>html,body{margin:0;background:#232427}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// «من قلب حمص» — paper-theatre film for Makkah Technologies. 1080x1920, 35s.
+// The black-and-white ablaq stone of Homs turns into signal bars and Wi-Fi arcs.
+// Every frame comes from render(t).
+const W = 1080, H = 1920, DUR = 35;
+const K = '#232427', K2 = '#34363b', K3 = '#4a4d54', C1 = '#F3EBDA', C2 = '#E4D8BE', C3 = '#CDBF9F', C4 = '#B3A383', G = '#50BE1E', G2 = '#2F8F10', GL = '#B8F08F';
+const DISPLAY = '"Readex Pro","IBM Plex Sans Arabic",sans-serif', BODY = '"IBM Plex Sans Arabic","Readex Pro",sans-serif';
+const cv = document.getElementById('c'); let ctx = cv.getContext('2d');
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const eback = p => { const c1 = 1.7, c3 = c1 + 1; return Math.max(0, 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)); };
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function rrp(x, y, w, h, r) { ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+// a piece of cut paper: filled shape with a soft drop shadow underneath
+function paper(fill, depth, draw) {
+  ctx.save(); if (depth > 0) { ctx.shadowColor = 'rgba(28,18,6,.42)'; ctx.shadowBlur = 9 * depth; ctx.shadowOffsetY = 6 * depth; ctx.shadowOffsetX = 2 * depth; }
+  ctx.fillStyle = fill; ctx.beginPath(); draw(); ctx.fill(); ctx.restore();
+}
+const rect = (fill, d, x, y, w, h, r = 0) => paper(fill, d, () => r ? rrp(x, y, w, h, r) : ctx.rect(x, y, w, h));
+const circ = (fill, d, x, y, r) => paper(fill, d, () => ctx.arc(x, y, r, 0, 7));
+function label(text, x, y, size, col, weight = 700, font = DISPLAY, align = 'center', dir = 'rtl') { ctx.save(); ctx.font = `${weight} ${size}px ${font}`; ctx.direction = dir; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = col; ctx.fillText(text, x, y); ctx.restore(); }
+// headline on a strip of paper
+function tag(text, y, t, tin, tout, o = {}) {
+  const p = eback(seg(t, tin, tin + .45)) * (1 - eio(seg(t, tout, tout + .3))); if (p <= 0.001) return;
+  const size = o.size || 64; ctx.save(); ctx.font = `700 ${size}px ${DISPLAY}`; ctx.direction = 'rtl'; const w = ctx.measureText(text).width + size * 1.1, h = size * 1.62;
+  ctx.translate(o.x || W / 2, y); ctx.rotate((o.rot ?? -1.6) * Math.PI / 180); ctx.scale(p, p);
+  const bg = o.green ? G : o.dark ? K : C1, fg = o.green ? '#fff' : o.dark ? C1 : K;
+  rect(bg, 1.6, -w / 2, -h / 2, w, h, 10);
+  ctx.strokeStyle = o.green ? 'rgba(255,255,255,.35)' : o.dark ? 'rgba(243,235,218,.25)' : 'rgba(35,36,39,.18)'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]); ctx.beginPath(); rrp(-w / 2 + 9, -h / 2 + 9, w - 18, h - 18, 6); ctx.stroke(); ctx.setLineDash([]);
+  label(text, 0, 3, size, fg); ctx.restore();
+}
+// ablaq: alternating basalt / limestone courses
+function ablaq(x, y, w, h, n, d = 0, a = K, b = C1) { for (let i = 0; i < n; i++) rect(i % 2 ? b : a, d, x, y + i * h / n, w, h / n + .5); }
+let GRAIN, LOGO;
+function buildGrain() { GRAIN = mk(540, 540); const g = GRAIN.getContext('2d'); const d = g.createImageData(540, 540); const r = rng(5); for (let i = 0; i < d.data.length; i += 4) { const v = 150 + r() * 105; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } g.putImageData(d, 0, 0); g.strokeStyle = 'rgba(90,70,40,.10)'; for (let i = 0; i < 260; i++) { g.lineWidth = r() * 1.2; g.beginPath(); const x = r() * 540, y = r() * 540, a = r() * 6.28, l = 6 + r() * 26; g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); } }
+
+// ---------- little paper props ----------
+function car(x, y, s, col) { ctx.save(); ctx.translate(x, y); ctx.scale(s, Math.abs(s)); paper(col, 1, () => { rrp(-70, -34, 140, 44, 12); ctx.moveTo(-40, -34); ctx.lineTo(-26, -62); ctx.lineTo(30, -62); ctx.lineTo(48, -34); ctx.closePath(); }); rect(C1, 0, -22, -56, 22, 20, 3); rect(C1, 0, 6, -56, 24, 20, 3); circ(K, .5, -40, 10, 15); circ(K, .5, 40, 10, 15); circ(C3, 0, -40, 10, 6); circ(C3, 0, 40, 10, 6); ctx.restore(); }
+function bird(x, y, s, flap, col = K2) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); paper(col, .6, () => { ctx.ellipse(0, 0, 20, 9, 0, 0, 7); ctx.moveTo(14, -4); ctx.lineTo(30, -1); ctx.lineTo(14, 3); ctx.closePath(); }); paper(col, .5, () => { ctx.moveTo(-10, -2); ctx.quadraticCurveTo(-4, -34 * flap, 16, -22 * flap); ctx.lineTo(4, -2); ctx.closePath(); }); ctx.restore(); }
+function person(x, y, s, col, head = C3, bob = 0) { ctx.save(); ctx.translate(x, y + bob); ctx.scale(s, s); paper(col, 1, () => { ctx.moveTo(-26, 0); ctx.quadraticCurveTo(-30, -92, 0, -96); ctx.quadraticCurveTo(30, -92, 26, 0); ctx.closePath(); }); circ(head, .8, 0, -122, 24); ctx.restore(); }
+function tree(x, y, s) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); rect(K2, .5, -5, -50, 10, 50); circ(K3, 1, 0, -74, 34); circ(K2, .6, -14, -86, 20); ctx.restore(); }
+function dome(x, y, r, col, d = 1) { paper(col, d, () => { ctx.moveTo(x - r, y); ctx.bezierCurveTo(x - r, y - r * .95, x - r * .25, y - r * 1.15, x, y - r * 1.4); ctx.bezierCurveTo(x + r * .25, y - r * 1.15, x + r, y - r * .95, x + r, y); ctx.closePath(); }); rect(col, 0, x - 3, y - r * 1.4 - 22, 6, 24); }
+function minaret(x, base, h, col, d = 1) { rect(col, d, x - 16, base - h, 32, h); rect(col, d, x - 26, base - h * .72, 52, 14); paper(col, d, () => { ctx.moveTo(x - 18, base - h); ctx.lineTo(x, base - h - 90); ctx.lineTo(x + 18, base - h); ctx.closePath(); }); }
+function antenna(x, y, s, glow) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); rect(K2, .6, 8, 20, 9, 120); paper('#FBF8F0', 1.2, () => { ctx.moveTo(-70, -42); ctx.quadraticCurveTo(0, -56, 70, -42); ctx.quadraticCurveTo(60, 0, 70, 42); ctx.quadraticCurveTo(0, 56, -70, 42); ctx.quadraticCurveTo(-60, 0, -70, -42); ctx.closePath(); }); ctx.fillStyle = C4; for (let i = -58; i <= 58; i += 10) for (let j = -34; j <= 34; j += 10) if (Math.abs(i) > 20) { ctx.beginPath(); ctx.arc(i, j, 1.6, 0, 7); ctx.fill(); } rect(C1, .4, -17, -50, 34, 100); paper(C1, .6, () => { ctx.moveTo(-8, -6); ctx.lineTo(-54, 2); ctx.lineTo(-54, 22); ctx.lineTo(-8, 12); ctx.closePath(); }); rect('#fff', .6, -74, -6, 26, 30, 5); if (glow > 0) { ctx.fillStyle = G; ctx.globalAlpha = glow; ctx.beginPath(); ctx.arc(-61, 9, 8, 0, 7); ctx.fill(); } ctx.restore(); }
+function thread(pts, p, w = 9) { if (p <= 0) return; const n = Math.max(2, Math.round((pts.length - 1) * p) + 1); ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.shadowColor = 'rgba(28,18,6,.35)'; ctx.shadowBlur = 6; ctx.shadowOffsetY = 4; ctx.strokeStyle = G; ctx.lineWidth = w; ctx.beginPath(); for (let i = 0; i < n; i++) i ? ctx.lineTo(pts[i][0], pts[i][1]) : ctx.moveTo(pts[i][0], pts[i][1]); ctx.stroke(); ctx.shadowColor = 'transparent'; ctx.strokeStyle = GL; ctx.lineWidth = w * .3; ctx.setLineDash([14, 12]); ctx.stroke(); ctx.restore(); }
+function curve(a, c, b, n = 40) { const o = []; for (let i = 0; i <= n; i++) { const q = i / n; o.push([(1 - q) * (1 - q) * a[0] + 2 * (1 - q) * q * c[0] + q * q * b[0], (1 - q) * (1 - q) * a[1] + 2 * (1 - q) * q * c[1] + q * q * b[1]]); } return o; }
+function wifi(x, y, s, lit, col = G) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); for (let i = 3; i >= 1; i--) { const on = lit >= i; ctx.save(); ctx.shadowColor = 'rgba(28,18,6,.38)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 5; ctx.strokeStyle = on ? col : C3; ctx.lineWidth = 26; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(0, 0, i * 52, Math.PI * 1.22, Math.PI * 1.78); ctx.stroke(); ctx.restore(); } circ(lit >= 0 ? col : C3, 1, 0, 0, 20); ctx.restore(); }
+const BARS = [0, 1, 2, 3, 4].map(i => ({ x: 300 + i * 120, w: 84, h: 130 + i * 92 }));
+function bars(baseY, lit, t, alpha = 1, sc = 1, cx = 540) { ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx, baseY); ctx.scale(sc, sc); ctx.translate(-540, 0); BARS.forEach((b, i) => { const on = lit > i, pop = on ? 1 + .12 * Math.max(0, 1 - Math.abs(lit - i - .5) * 2) : 1; ctx.save(); ctx.translate(b.x, 0); ctx.scale(pop, pop); rect(on ? G : C3, 1.2, -b.w / 2, -b.h, b.w, b.h, 8); if (on) rect(GL, 0, -b.w / 2 + 10, -b.h + 10, 12, b.h - 20, 6); ctx.restore(); }); ctx.restore(); }
+
+// ================= 1 — ablaq wall becomes signal bars (0–4) =================
+function s1(t) {
+  rect(C1, 0, 0, 0, W, H);
+  ctx.save(); ctx.strokeStyle = 'rgba(35,36,39,.07)'; ctx.lineWidth = 3; for (let x = 60; x < W; x += 90) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); } ctx.restore();
+  const m = eio(seg(t, 1.5, 2.7)), SH = 148;
+  for (let i = 0; i < 13; i++) {
+    const dark = i % 2 === 0, bi = i - 4, isBar = bi >= 0 && bi < 5;
+    let cx = W / 2, cy = i * SH + SH / 2, w = W + 40, h = SH + 1, col = dark ? K : C1;
+    if (isBar) { const b = BARS[bi]; cx = lerp(W / 2, b.x, m); cy = lerp(cy, 1250 - b.h / 2, m); w = lerp(w, b.w, m); h = lerp(h, b.h, m); if (m > .98) continue; }
+    else { cx += (i % 2 ? 1 : -1) * eio(seg(t, 1.3 + (i % 5) * .08, 2.3 + (i % 5) * .08)) * (W + 200); }
+    rect(col, 1.2, cx - w / 2, cy - h / 2, w, h, m > .4 && isBar ? 8 : 0);
+    if (m < .3) { ctx.save(); ctx.globalAlpha = 1 - m / .3; ctx.strokeStyle = dark ? 'rgba(243,235,218,.10)' : 'rgba(35,36,39,.10)'; ctx.lineWidth = 3; for (let x = (i % 2) * 110; x < W; x += 220) { ctx.beginPath(); ctx.moveTo(x, cy - h / 2); ctx.lineTo(x, cy + h / 2); ctx.stroke(); } ctx.restore(); }
+  }
+  if (m > .98) { const blink = Math.sin(t * 9) > 0 ? 1 : 0; bars(1250, blink, t); label('إشارة ضعيفة', 540, 1340, 44, K3, 500, BODY); }
+  tag('بحمص…', 470, t, .5, 3.7, { dark: m < .5, size: 84 }); tag('كل شي إلو أصل', 600, t, .95, 3.7, { dark: m < .5, size: 72, rot: 1.2 });
+}
+
+// ================= 2 — the New Clock square (4–10 waiting, 13.5–16 alive) =================
+function square(u, alive) {
+  const zoomIn = alive ? lerp(1.45, 1, eio(seg(u, 0, 1.6))) : lerp(1, 1.55, eio(seg(u, 2.4, 4.6)));
+  rect(C1, 0, 0, 0, W, H);
+  ctx.save(); ctx.translate(540, 980); ctx.scale(zoomIn, zoomIn); ctx.translate(-540 + Math.sin(u * .5) * 8, -760);
+  circ(C2, 1, 830, 620, 120);
+  // far skyline
+  const r = rng(11); for (let x = -40; x < W + 40;) { const w = 70 + r() * 90, h = 150 + r() * 220; rect(C3, .6, x, 1260 - h, w, h + 400); if (r() < .3) dome(x + w / 2, 1260 - h, w * .3, C3, .5); x += w + 6; }
+  minaret(160, 1260, 520, C3, .6); minaret(930, 1260, 470, C3, .6);
+  // mid buildings
+  for (const [x, w, h, s] of [[-30, 250, 520, 3], [800, 320, 600, 5], [230, 150, 380, 7], [690, 130, 340, 9]]) {
+    rect(C2, 1.2, x, 1400 - h, w, h + 300); const rr2 = rng(s);
+    for (let yy = 1400 - h + 40; yy < 1340; yy += 84) for (let xx = x + 26; xx < x + w - 50; xx += 74) { const lit = alive && rr2() < .5; rect(lit ? G : K2, .3, xx, yy, 40, 52, 4); }
+  }
+  // road + roundabout
+  rect(K2, 0, -200, 1420, W + 400, 700);
+  ctx.save(); ctx.strokeStyle = C3; ctx.lineWidth = 6; ctx.setLineDash([40, 34]); ctx.beginPath(); ctx.ellipse(540, 1560, 470, 120, 0, 0, 7); ctx.stroke(); ctx.restore();
+  paper(C2, 1.4, () => ctx.ellipse(540, 1520, 300, 74, 0, 0, 7)); paper(C3, 0, () => ctx.ellipse(540, 1512, 250, 54, 0, 0, 7));
+  tree(330, 1510, 1); tree(750, 1510, 1.1); tree(420, 1540, .8); tree(670, 1545, .85);
+  if (alive) { ctx.save(); for (let k = 0; k < 3; k++) { const q = (u * .7 + k / 3) % 1; ctx.strokeStyle = G; ctx.globalAlpha = (1 - q) * .8; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(540, 688, 130 + q * 330, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); } ctx.restore(); }
+  // the clock tower
+  rect(C2, 1.5, 420, 1410, 240, 100, 6); rect(C1, 1, 440, 1380, 200, 40, 4);
+  ablaq(465, 800, 150, 600, 10, 1.4);
+  rect(K, 1.6, 410, 556, 260, 262, 8); rect(C1, .6, 424, 570, 232, 234, 4);
+  paper(K, 1.4, () => { ctx.moveTo(410, 560); ctx.lineTo(540, 450); ctx.lineTo(670, 560); ctx.closePath(); }); rect(K, .5, 535, 410, 10, 50); circ(K, .5, 540, 404, 10);
+  const fx = 540, fy = 688; circ(K, .6, fx, fy, 100); circ('#FBF7EC', 0, fx, fy, 88);
+  if (!alive) {       // hands replaced by a loading spinner
+    for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283 + Math.floor(u * 10) / 12 * 6.283; ctx.save(); ctx.globalAlpha = .12 + .88 * i / 12; ctx.strokeStyle = K; ctx.lineWidth = 12; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(fx + Math.cos(a) * 34, fy + Math.sin(a) * 34); ctx.lineTo(fx + Math.cos(a) * 68, fy + Math.sin(a) * 68); ctx.stroke(); ctx.restore(); }
+  } else {
+    ctx.save(); ctx.strokeStyle = K; ctx.lineWidth = 4; for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; ctx.beginPath(); ctx.moveTo(fx + Math.cos(a) * 70, fy + Math.sin(a) * 70); ctx.lineTo(fx + Math.cos(a) * 80, fy + Math.sin(a) * 80); ctx.stroke(); }
+    const hand = (a, l, w, c) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + Math.sin(a) * l, fy - Math.cos(a) * l); ctx.stroke(); };
+    hand(1.05, 42, 11, K); hand(u * 2.6 + 3.3, 64, 8, K); hand(Math.floor(u * 4) / 4 * 6.283 / 3, 72, 4, G2); ctx.restore(); circ(G, 0, fx, fy, 9);
+  }
+  // people, cars, pigeons
+  const bob = alive ? Math.abs(Math.sin(u * 7)) * -8 : 0;
+  person(200, 1640, 1.25, K, C3, bob); person(270, 1650, 1.05, K3, C2, alive ? Math.abs(Math.sin(u * 7 + 1)) * -8 : 0); person(880, 1660, 1.3, K, C3, alive ? Math.abs(Math.sin(u * 7 + 2)) * -8 : 0);
+  if (!alive) { const bx = 235, by = 1420; rect(C1, 1.2, bx - 62, by - 40, 124, 70, 30); paper(C1, 0, () => { ctx.moveTo(bx - 14, by + 26); ctx.lineTo(bx - 26, by + 56); ctx.lineTo(bx + 10, by + 28); ctx.closePath(); }); for (let k = 0; k < 3; k++) circ(Math.floor(u * 2.5) % 3 === k ? K : C4, 0, bx - 30 + k * 30, by - 5, 9); }
+  const cm = alive ? u * 150 : 0;
+  car(350 + cm * 1.2, 1700, 1.25, K); car(790 - cm, 1790, -1.45, K3); car(120 + cm * .8, 1860, 1.6, C3);
+  const br = rng(21); for (let i = 0; i < 9; i++) { const x0 = 80 + br() * 920, y0 = 880 + br() * 420, s = .7 + br() * .7; bird(x0 + (alive ? (u * (90 + br() * 120)) : 0), y0 - (alive ? u * 60 * br() : 0), s, alive ? Math.sin(u * 14 + i) : .9, i % 3 ? K2 : K3); }
+  ctx.restore();
+}
+function s2(t) { square(t - 4, false); tag('…إلا النت', 450, t, 4.5, 9.6, { size: 78, dark: true }); tag('كان ناطر', 568, t, 5.0, 9.6, { size: 72, rot: 1.4 }); }
+function s3b(t) { square(t - 13.5, true); tag('من قلب حمص', 480, t, 13.8, 15.75, { size: 92, green: true }); }
+
+// ================= 3 — the ablaq arch lights up into Wi-Fi (10–13.5) =================
+function s3(t) {
+  const u = t - 10, z = lerp(1.12, 1, eout(seg(u, 0, 1.2)));
+  rect(C2, 0, 0, 0, W, H);
+  ctx.save(); ctx.translate(540, 1100); ctx.scale(z, z); ctx.translate(-540, -1100);
+  // mosque behind
+  rect(C3, .8, 120, 1180, 840, 500); dome(540, 1180, 190, C3, .8); dome(260, 1180, 90, C3, .6); dome(820, 1180, 90, C3, .6); minaret(100, 1700, 900, C3, .8); minaret(980, 1700, 900, C3, .8);
+  // wall with the arch opening
+  const cx = 540, cy = 1210;
+  paper(C1, 2, () => { ctx.rect(-40, 560, W + 80, 1500); ctx.moveTo(cx - 230, 1990); ctx.lineTo(cx - 230, cy); ctx.arc(cx, cy, 230, Math.PI, 0); ctx.lineTo(cx + 230, 1990); ctx.closePath(); }); ctx.fillStyle = C1;
+  // re-cut the opening (even-odd)
+  ctx.save(); ctx.beginPath(); ctx.moveTo(cx - 230, 2000); ctx.lineTo(cx - 230, cy); ctx.arc(cx, cy, 230, Math.PI, 0); ctx.lineTo(cx + 230, 2000); ctx.closePath(); ctx.clip();
+  rect(K2, 0, 0, 0, W, H); rect(K, 0, cx - 150, cy + 120, 300, 900); for (let k = 0; k < 4; k++) rect(K3, 0, cx - 230, cy + 260 + k * 150, 460, 8);
+  ctx.strokeStyle = C4; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, cy - 230); ctx.lineTo(cx, cy - 20); ctx.stroke();
+  ctx.restore();
+  // three nested voussoir bands
+  for (let k = 2; k >= 0; k--) {
+    const r0 = 240 + k * 96, r1 = r0 + 84, on = eout(seg(u, .8 + k * .65, 1.15 + k * .65)), n = 9 + k * 2;
+    for (let i = 0; i < n; i++) { const a0 = Math.PI + i / n * Math.PI, a1 = Math.PI + (i + 1) / n * Math.PI; const base = i % 2 ? C1 : K, lit = i % 2 ? GL : G; paper(on > .5 ? lit : base, 1, () => { ctx.arc(cx, cy, r1, a0, a1); ctx.arc(cx, cy, r0, a1, a0, true); ctx.closePath(); }); }
+    for (const sx of [-1, 1]) ablaq(sx < 0 ? cx - r1 : cx + r0, cy, r1 - r0, 800, 9, .8, on > .5 ? G : K, on > .5 ? GL : C1);
+  }
+  // the hanging lamp is the Wi-Fi dot
+  const lampOn = seg(u, .4, .7); circ(lampOn > .5 ? G : C3, 1.2, cx, cy - 10, 30); if (lampOn > .5) { ctx.save(); const g = ctx.createRadialGradient(cx, cy - 10, 10, cx, cy - 10, 220); g.addColorStop(0, 'rgba(184,240,143,.55)'); g.addColorStop(1, 'rgba(184,240,143,0)'); ctx.fillStyle = g; ctx.fillRect(cx - 220, cy - 230, 440, 440); ctx.restore(); }
+  ctx.restore();
+  // sticker: it IS a Wi-Fi symbol
+  const st = eback(seg(u, 2.5, 2.95)); if (st > 0) { ctx.save(); ctx.translate(850, 800); ctx.rotate(.14); ctx.scale(st, st); circ(C1, 2, 0, -40, 150); wifi(0, 30, .78, 3); ctx.restore(); }
+  tag('لهيك جبنالك ياه', 500, t, 10.5, 13.2, { size: 80, dark: true });
+}
+
+// ================= 4 — the courtyard house (16–22) =================
+function s4(t) {
+  const u = t - 16, pan = Math.sin(u * .45) * 14;
+  rect(C2, 0, 0, 0, W, H);
+  ctx.save(); ctx.translate(pan, 0);
+  // sky strip + roof with antenna
+  rect(C1, 0, -60, 0, W + 120, 760);
+  circ(C2, .8, 190, 640, 70);
+  const TH = [[1210, 560], [1080, 420], [905, 696]];
+  rect(C3, 1, -60, 740, W + 120, 60); ablaq(-60, 800, W + 120, 60, 2, .8);
+  antenna(900, 690, 1.0, seg(u, .9, 1.1));
+  // back wall
+  rect(C1, 1.4, -60, 860, W + 120, 1100);
+  // iwan (big arch) with ablaq frame
+  const cx = 540, cy = 1210;
+  for (let i = 0; i < 11; i++) { const a0 = Math.PI + i / 11 * Math.PI, a1 = Math.PI + (i + 1) / 11 * Math.PI; paper(i % 2 ? C1 : K, 1, () => { ctx.arc(cx, cy, 290, a0, a1); ctx.arc(cx, cy, 230, a1, a0, true); ctx.closePath(); }); }
+  ablaq(cx - 290, cy, 60, 400, 6, .8); ablaq(cx + 230, cy, 60, 400, 6, .8);
+  paper(K2, 0, () => { ctx.moveTo(cx - 230, 1610); ctx.lineTo(cx - 230, cy); ctx.arc(cx, cy, 230, Math.PI, 0); ctx.lineTo(cx + 230, 1610); ctx.closePath(); });
+  // TV on the iwan wall
+  const tvOn = seg(u, 2.8, 3.0); rect(K, 1, cx - 95, 1090, 190, 116, 8); rect(tvOn > .5 ? G : K3, 0, cx - 85, 1100, 170, 96, 4); if (tvOn > .5) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(cx - 14, 1128); ctx.lineTo(cx - 14, 1168); ctx.lineTo(cx + 20, 1148); ctx.fill(); }
+  // sofa + grandfather with phone
+  rect(C3, 1.2, cx - 200, 1470, 400, 120, 22); rect(C4, .8, cx - 200, 1430, 400, 60, 22);
+  person(cx - 70, 1500, 1.5, K, C2); rect('#fff', .6, cx - 96, 1320, 52, 14, 6);
+  const phOn = seg(u, 1.6, 1.8); ctx.save(); ctx.translate(cx + 6, 1420); ctx.rotate(-.2); rect(K, .8, -24, -40, 48, 80, 8); rect(phOn > .5 ? G : K3, 0, -19, -33, 38, 62, 4); ctx.restore();
+  // windows
+  for (const [wx, wy] of [[70, 960], [860, 960]]) { const on = seg(u, 1.3, 1.6); rect(K, 1, wx - 10, wy - 10, 170, 250, 80); paper(on > .5 ? GL : K3, 0, () => { ctx.moveTo(wx, wy + 230); ctx.lineTo(wx, wy + 75); ctx.arc(wx + 75, wy + 75, 75, Math.PI, 0); ctx.lineTo(wx + 150, wy + 230); ctx.closePath(); }); ctx.save(); ctx.strokeStyle = K; ctx.lineWidth = 6; for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(wx + k * 37.5, wy); ctx.lineTo(wx + k * 37.5, wy + 230); ctx.stroke(); } for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(wx, wy + k * 58); ctx.lineTo(wx + 150, wy + k * 58); ctx.stroke(); } ctx.restore(); }
+  // jasmine
+  ctx.save(); ctx.strokeStyle = K3; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(1040, 1700); ctx.bezierCurveTo(960, 1400, 1080, 1150, 1000, 880); ctx.stroke(); ctx.restore();
+  const jr = rng(8); for (let i = 0; i < 26; i++) { const q = jr(), x = 1040 - 40 * Math.sin(q * 3.1) - 20 + jr() * 70 - 30, y = 1700 - q * 820; circ(i % 3 ? '#fff' : C4, .5, x, y, 9 + jr() * 7); }
+  // courtyard floor (ablaq tiles) + fountain
+  rect(C3, 0, -60, 1610, W + 120, 400); for (let r0 = 0; r0 < 4; r0++) for (let c0 = -1; c0 < 9; c0++) if ((r0 + c0) % 2 === 0) paper(K, 0, () => { const x = c0 * 150 + r0 * 30, y = 1620 + r0 * 80; ctx.moveTo(x, y); ctx.lineTo(x + 150, y); ctx.lineTo(x + 180, y + 80); ctx.lineTo(x + 30, y + 80); ctx.closePath(); });
+  paper(K, 1.6, () => ctx.ellipse(540, 1760, 210, 60, 0, 0, 7)); paper('#DDEBDD', 0, () => ctx.ellipse(540, 1752, 180, 44, 0, 0, 7)); rect(C1, 1, 525, 1660, 30, 96, 8);
+  ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 7; ctx.lineCap = 'round'; for (const sx of [-1, 1]) for (let k = 0; k < 2; k++) { const w = 60 + k * 50 + Math.sin(u * 5 + k) * 6; ctx.beginPath(); ctx.moveTo(540, 1664); ctx.quadraticCurveTo(540 + sx * w * .6, 1590 - k * 20, 540 + sx * w, 1746); ctx.stroke(); } ctx.restore();
+  // kid with laptop on the step
+  person(210, 1700, 1.2, K3, C2); const lpOn = seg(u, 2.2, 2.4); ctx.save(); ctx.translate(292, 1640); rect(K, .8, -52, -64, 104, 70, 6); rect(lpOn > .5 ? G : K2, 0, -45, -58, 90, 58, 3); rect(C4, .6, -64, 6, 128, 12, 5); ctx.restore();
+  // the signal thread: sky → antenna → down the wall → into the house
+  thread(curve(TH[0], TH[1], [838, 700]), eout(seg(u, .2, .9)));
+  thread([[908, 800], [908, 900], [800, 900], [800, 1010], [cx + 250, 1010]], eout(seg(u, 1.0, 1.6)), 7);
+  // video-call card
+  const vc = eback(seg(u, 3.3, 3.75)); if (vc > 0) { ctx.save(); ctx.translate(770, 1330); ctx.rotate(.06); ctx.scale(vc, vc); rect(C1, 2, -120, -90, 240, 180, 20); rect(G, 0, -108, -78, 216, 124, 12); person(0, 60, .78, '#fff', C1); label('بابا… سامعني منيح!', 0, 68, 26, K, 700, BODY); ctx.restore(); }
+  ctx.restore();
+  tag('إنترنت هوائي', 470, t, 16.5, 21.6, { size: 84, dark: true }); tag('ثابت وسريع', 600, t, 17.0, 21.6, { size: 76, green: true, rot: 1.4 });
+}
+
+// ================= 5 — the covered souq (22–28) =================
+function icon(kind, s) { ctx.save(); ctx.scale(s, s);
+  if (kind === 'cam') { rect(K3, .5, 46, -60, 60, 16); rect(K3, .5, 90, -90, 20, 80); paper('#fff', .8, () => rrp(-90, -40, 150, 76, 22)); circ(K, .4, -70, -2, 34); circ(G, 0, -70, -2, 16); rect(K, .3, -100, -54, 170, 14, 6); }
+  if (kind === 'sun') { paper(K, .8, () => { ctx.moveTo(-90, 50); ctx.lineTo(-60, -50); ctx.lineTo(90, -50); ctx.lineTo(60, 50); ctx.closePath(); }); ctx.strokeStyle = C1; ctx.lineWidth = 5; for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(-90 + k * 37.5 + 0, 50); ctx.lineTo(-60 + k * 37.5, -50); ctx.stroke(); } ctx.beginPath(); ctx.moveTo(-75, 0); ctx.lineTo(75, 0); ctx.stroke(); circ(G, .6, 78, -78, 26); }
+  if (kind === 'ac') { paper('#fff', .8, () => rrp(-100, -50, 200, 84, 16)); rect(K, 0, -80, 14, 160, 8, 4); rect(C3, 0, -80, -4, 160, 6, 3); ctx.strokeStyle = G; ctx.lineWidth = 7; ctx.lineCap = 'round'; for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(k * 50, 48); ctx.quadraticCurveTo(k * 50 + 12, 66, k * 50, 84); ctx.stroke(); } }
+  ctx.restore(); }
+function s5(t) {
+  const u = t - 22; rect(K, 0, 0, 0, W, H);
+  const vx = 540, vy = 1010, D = 3, speed = 3.1, camZ = u * speed + .6;
+  const SIGNS = [{ z: 6.2, kind: 'cam', text: 'كاميرات مراقبة' }, { z: 12.0, kind: 'sun', text: 'طاقة شمسية' }, { z: 17.8, kind: 'ac', text: 'تكييف' }];
+  // far light
+  const g = ctx.createRadialGradient(vx, vy, 10, vx, vy, 520); g.addColorStop(0, '#FBF4E2'); g.addColorStop(.5, 'rgba(243,235,218,.35)'); g.addColorStop(1, 'rgba(243,235,218,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const items = [];
+  for (let j = Math.floor(camZ / D); j < Math.floor(camZ / D) + 9; j++) items.push({ z: j * D, arch: j });
+  for (const s of SIGNS) items.push({ z: s.z, sign: s });
+  items.sort((a, b) => b.z - a.z);
+  for (const it of items) {
+    const dz = it.z - camZ; if (dz < (it.sign ? 1.25 : .5)) continue; const s = 2.3 / dz;
+    ctx.save(); ctx.translate(vx, vy); ctx.scale(s, s);
+    if (it.arch !== undefined) {
+      const hw = 430, fl = 640, th = 96, ry = 470;
+      const open = () => { ctx.moveTo(-hw, fl); ctx.lineTo(-hw, 0); ctx.ellipse(0, 0, hw, ry, 0, Math.PI, 0); ctx.lineTo(hw, fl); ctx.closePath(); };
+      // wall slice with the arch cut out of it
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 10; ctx.fillStyle = it.arch % 2 ? '#2b2d31' : '#26282c'; ctx.beginPath(); ctx.rect(-3000, -3000, 6000, 6000); open(); ctx.fill('evenodd'); ctx.restore();
+      rect(it.arch % 2 ? K3 : C4, 0, -3000, fl, 6000, 3000);
+      // ablaq voussoirs + piers around the opening
+      const n = 13; for (let i = 0; i < n; i++) { const a0 = Math.PI + i / n * Math.PI, a1 = Math.PI + (i + 1) / n * Math.PI; paper((i + it.arch) % 2 ? C1 : K, 1, () => { ctx.ellipse(0, 0, hw + th, ry + th, 0, a0, a1); ctx.ellipse(0, 0, hw, ry, 0, a1, a0, true); ctx.closePath(); }); }
+      for (const sx of [-1, 1]) ablaq(sx < 0 ? -hw - th : hw, 0, th, fl, 6, 1, it.arch % 2 ? C1 : K, it.arch % 2 ? K : C1);
+      ctx.strokeStyle = C4; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, -ry); ctx.lineTo(0, -ry + 130); ctx.stroke(); circ(it.arch % 2 ? GL : C2, 1, 0, -ry + 150, 34);
+    } else {
+      const sg = it.sign, sw = Math.sin(u * 2.4 + sg.z) * .05; ctx.rotate(sw); ctx.globalAlpha = seg(dz, 1.25, 1.7); ctx.translate(0, 60);
+      ctx.strokeStyle = C3; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-150, -420); ctx.lineTo(-150, -250); ctx.moveTo(150, -420); ctx.lineTo(150, -250); ctx.stroke();
+      rect(C1, 2.4, -230, -250, 460, 420, 26); ctx.strokeStyle = 'rgba(35,36,39,.2)'; ctx.lineWidth = 4; ctx.setLineDash([16, 12]); ctx.beginPath(); rrp(-212, -232, 424, 384, 16); ctx.stroke(); ctx.setLineDash([]);
+      ctx.save(); ctx.translate(0, -100); icon(sg.kind, 1.25); ctx.restore(); rect(G, .6, -190, 44, 380, 96, 14); label(sg.text, 0, 94, 54, '#fff');
+    }
+    ctx.restore();
+  }
+  // floor sheen + skylight beams
+  ctx.save(); ctx.globalAlpha = .13; ctx.fillStyle = C1; for (let k = 0; k < 3; k++) { const x = 220 + k * 320 + Math.sin(u * .6 + k) * 30; ctx.beginPath(); ctx.moveTo(x - 40, 0); ctx.lineTo(x + 40, 0); ctx.lineTo(x + 240, H); ctx.lineTo(x - 80, H); ctx.closePath(); ctx.fill(); } ctx.restore();
+  tag('وكل شي بيلزمك', 480, t, 22.4, 27.6, { size: 78 });
+}
+
+// ================= 6 — the shop + full signal + sign-off (28–35) =================
+function s6(t) {
+  const u = t - 28; rect(C1, 0, 0, 0, W, H);
+  ablaq(0, 0, W, 190, 2, 1.2); ablaq(0, 1650, W, 270, 3, 1.2);
+  const out = eio(seg(u, 2.6, 3.3));
+  ctx.save(); ctx.translate(0, out * 1500); ctx.globalAlpha = 1 - seg(u, 2.9, 3.3);
+  // shop
+  rect(C2, 1.6, 150, 1010, 780, 600); ablaq(150, 1010, 780, 60, 2, .8);
+  rect(K, 1.4, 190, 1090, 700, 130, 10); label('مركز مكة للتقنيات', 590, 1158, 62, C1); circ('#fff', .6, 268, 1155, 50); ctx.drawImage(LOGO, 218, 1105, 100, 100);
+  for (let k = 0; k < 7; k++) paper(k % 2 ? '#fff' : G, 1.2, () => { const x = 170 + k * 106; ctx.moveTo(x, 1230); ctx.lineTo(x + 106, 1230); ctx.lineTo(x + 106, 1300); ctx.arc(x + 53, 1300, 53, 0, Math.PI); ctx.closePath(); });
+  rect(K, .8, 210, 1370, 380, 240, 6); rect('#DDE9E0', 0, 222, 1382, 356, 216, 3); rect(K, .8, 650, 1350, 200, 262, 6); rect('#DDE9E0', 0, 662, 1362, 176, 250, 3); circ(G, .3, 680, 1490, 8);
+  antenna(800, 930, .9, 1);
+  bars(900, clamp(u / .34 - 1.6, 0, 5), t, 1, .78);
+  ctx.restore();
+  tag('إشارة كاملة', 480, t, 28.6, 30.5, { size: 84, green: true });
+  // sign-off
+  const pp = eback(seg(u, 3.9, 4.4));
+  tag('مركز مكة للتقنيات', 900, t, 31.5, 99, { size: 82, dark: true, rot: -1 });
+  tag('من قلب حمص… لكل حمص', 1030, t, 31.95, 99, { size: 62, green: true, rot: 1 });
+  if (pp > 0) { ctx.save(); ctx.translate(540, 1200); ctx.scale(lerp(.8, 1, pp), lerp(.8, 1, pp)); ctx.globalAlpha = clamp(pp); rect('#fff', 2, -380, -64, 760, 128, 64); circ(G, .5, -300, 0, 44); ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(-300, 0, 19, Math.PI * .6, Math.PI * 1.45); ctx.stroke(); label('0982 621 531', 50, 4, 76, K, 700, BODY, 'center', 'ltr'); ctx.restore(); }
+  const a1 = seg(u, 4.6, 5.0); ctx.save(); ctx.globalAlpha = a1; label('حمص – القصور – خلف جامع حمود الناصر', 540, 1330, 40, K, 500, BODY); ctx.restore();
+  const a2 = eback(seg(u, 5.1, 5.5)); if (a2 > 0) { ctx.save(); ctx.translate(540, 1430); ctx.scale(a2, a2); rect(K, 1.4, -330, -44, 660, 88, 44); label('اكتب نقطة (.) بالتعليقات', 0, 3, 42, C1); ctx.restore(); }
+}
+
+// ---------- the logo is on screen the whole time ----------
+function logoBadge(t) {
+  const u = t - 28, big = eio(seg(u, 2.9, 3.7)), inP = eback(seg(t, .15, .65));
+  const x = 540, y = lerp(300, 620, big), r = lerp(66, 205, big) * inP; if (r <= 0) return;
+  circ(K, 2, x, y, r + lerp(9, 16, big)); circ(G, 0, x, y, r + lerp(4, 8, big)); circ('#fff', 0, x, y, r); ctx.drawImage(LOGO, x - r, y - r, 2 * r, 2 * r);
+}
+// paper sheet wipe between scenes
+const CUTS = [4, 10, 13.5, 16, 22, 28];
+function wipe(t) { for (const c of CUTS) { const p = seg(t, c - .28, c + .28); if (p > 0 && p < 1) { const y = lerp(H + 80, -H - 260, eio(p)); ctx.save(); ctx.translate(0, y); paper(K, 3, () => { ctx.moveTo(0, 0); for (let x = 0; x <= W; x += 90) ctx.arc(x + 45, 0, 45, Math.PI, 0); ctx.lineTo(W, H + 180); for (let x = W; x >= 0; x -= 90) ctx.arc(x - 45, H + 180, 45, 0, Math.PI); ctx.closePath(); }); rect(G, 0, 0, 120, W, 26); rect(C1, 0, 0, 170, W, 12); rect(C1, 0, 0, H + 30, W, 12); rect(G, 0, 0, H + 60, W, 26); ctx.restore(); } } }
+function scene(t) { if (t < 4) s1(t); else if (t < 10) s2(t); else if (t < 13.5) s3(t); else if (t < 16) s3b(t); else if (t < 22) s4(t); else if (t < 28) s5(t); else s6(t); }
+function render(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H); scene(t); wipe(t); logoBadge(t);
+  // paper grain + soft vignette
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = .34; for (let x = 0; x < W; x += 540) for (let y = 0; y < H; y += 540) ctx.drawImage(GRAIN, x, y); ctx.restore();
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * .35, W / 2, H / 2, H * .8); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(20,12,4,.32)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  if (t > DUR - .4) { ctx.fillStyle = `rgba(20,14,8,${seg(t, DUR - .4, DUR) * .5})`; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+window.ready = (async () => {
+  LOGO = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'assets/logo.webp'; });
+  const probe = 'مكة abc 0.9… #:-%';
+  await Promise.all(['400 80px "Readex Pro"', '700 80px "Readex Pro"', '500 40px "IBM Plex Sans Arabic"', '700 40px "IBM Plex Sans Arabic"'].map(f => document.fonts.load(f, probe)));
+  buildGrain(); for (const tt of [1, 6, 11, 14, 18, 24, 33]) render(tt); await document.fonts.ready; return true;
+})();
+window.render = render;
+</script>
+</body>
+</html>
