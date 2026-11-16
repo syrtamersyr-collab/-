@@ -143,7 +143,7 @@ function square(u, alive) {
   circ(C2, 1, 830, 620, 120);
   // far skyline
   const r = rng(11); for (let x = -40; x < W + 40;) { const w = 70 + r() * 90, h = 150 + r() * 220; rect(C3, .6, x, 1260 - h, w, h + 400); if (r() < .3) dome(x + w / 2, 1260 - h, w * .3, C3, .5); x += w + 6; }
-  minaret(160, 1260, 520, C3, .6); minaret(930, 1260, 470, C3, .6);
+  khalidMosque(215, 1264, .4, 0);
   // mid buildings
   for (const [x, w, h, s] of [[-30, 250, 520, 3], [800, 320, 600, 5], [230, 150, 380, 7], [690, 130, 340, 9]]) {
     rect(C2, 1.2, x, 1400 - h, w, h + 300); const rr2 = rng(s);
@@ -152,22 +152,16 @@ function square(u, alive) {
   // road + roundabout
   rect(K2, 0, -200, 1420, W + 400, 700);
   ctx.save(); ctx.strokeStyle = C3; ctx.lineWidth = 6; ctx.setLineDash([40, 34]); ctx.beginPath(); ctx.ellipse(540, 1560, 470, 120, 0, 0, 7); ctx.stroke(); ctx.restore();
-  paper(C2, 1.4, () => ctx.ellipse(540, 1520, 300, 74, 0, 0, 7)); paper(C3, 0, () => ctx.ellipse(540, 1512, 250, 54, 0, 0, 7));
-  tree(330, 1510, 1); tree(750, 1510, 1.1); tree(420, 1540, .8); tree(670, 1545, .85);
-  if (alive) { ctx.save(); for (let k = 0; k < 3; k++) { const q = (u * .7 + k / 3) % 1; ctx.strokeStyle = G; ctx.globalAlpha = (1 - q) * .8; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(540, 688, 130 + q * 330, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); } ctx.restore(); }
-  // the clock tower
-  rect(C2, 1.5, 420, 1410, 240, 100, 6); rect(C1, 1, 440, 1380, 200, 40, 4);
-  ablaq(465, 800, 150, 600, 10, 1.4);
-  rect(K, 1.6, 410, 556, 260, 262, 8); rect(C1, .6, 424, 570, 232, 234, 4);
-  paper(K, 1.4, () => { ctx.moveTo(410, 560); ctx.lineTo(540, 450); ctx.lineTo(670, 560); ctx.closePath(); }); rect(K, .5, 535, 410, 10, 50); circ(K, .5, 540, 404, 10);
-  const fx = 540, fy = 688; circ(K, .6, fx, fy, 100); circ('#FBF7EC', 0, fx, fy, 88);
-  if (!alive) {       // hands replaced by a loading spinner
-    for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283 + Math.floor(u * 10) / 12 * 6.283; ctx.save(); ctx.globalAlpha = .12 + .88 * i / 12; ctx.strokeStyle = K; ctx.lineWidth = 12; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(fx + Math.cos(a) * 34, fy + Math.sin(a) * 34); ctx.lineTo(fx + Math.cos(a) * 68, fy + Math.sin(a) * 68); ctx.stroke(); ctx.restore(); }
-  } else {
-    ctx.save(); ctx.strokeStyle = K; ctx.lineWidth = 4; for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; ctx.beginPath(); ctx.moveTo(fx + Math.cos(a) * 70, fy + Math.sin(a) * 70); ctx.lineTo(fx + Math.cos(a) * 80, fy + Math.sin(a) * 80); ctx.stroke(); }
-    const hand = (a, l, w, c) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + Math.sin(a) * l, fy - Math.cos(a) * l); ctx.stroke(); };
-    hand(1.05, 42, 11, K); hand(u * 2.6 + 3.3, 64, 8, K); hand(Math.floor(u * 4) / 4 * 6.283 / 3, 72, 4, G2); ctx.restore(); circ(G, 0, fx, fy, 9);
-  }
+  paper(C3, 1.2, () => ctx.ellipse(540, 1520, 400, 84, 0, 0, 7));
+  tree(190, 1520, 1); tree(890, 1520, 1.1);
+  if (alive) { ctx.save(); for (let k = 0; k < 3; k++) { const q = (u * .7 + k / 3) % 1; ctx.strokeStyle = G; ctx.globalAlpha = (1 - q) * .8; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(540, 697, 120 + q * 330, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); } ctx.restore(); }
+  // the New Clock, with either a loading spinner or real hands on its face
+  homsClock(540, 1500, 1.0, (fx, fy, R) => {
+    if (!alive) { for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283 + Math.floor(u * 10) / 12 * 6.283; ctx.save(); ctx.globalAlpha = .12 + .88 * i / 12; ctx.strokeStyle = K; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(fx + Math.cos(a) * R * .4, fy + Math.sin(a) * R * .4); ctx.lineTo(fx + Math.cos(a) * R * .8, fy + Math.sin(a) * R * .8); ctx.stroke(); ctx.restore(); } }
+    else { ctx.save(); ctx.strokeStyle = K; ctx.lineWidth = 3.5; for (let i = 0; i < 12; i++) { const a = i * Math.PI / 6; ctx.beginPath(); ctx.moveTo(fx + Math.cos(a) * R * .78, fy + Math.sin(a) * R * .78); ctx.lineTo(fx + Math.cos(a) * R * .9, fy + Math.sin(a) * R * .9); ctx.stroke(); }
+      const hand = (a, l, w, c) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + Math.sin(a) * l, fy - Math.cos(a) * l); ctx.stroke(); };
+      hand(1.05, R * .48, 8, K); hand(u * 2.6 + 3.3, R * .72, 6, K); hand(Math.floor(u * 4) / 4 * 6.283 / 3, R * .82, 3, G2); ctx.restore(); circ(G, 0, fx, fy, 6); }
+  });
   // people, cars, pigeons
   const bob = alive ? Math.abs(Math.sin(u * 7)) * -8 : 0;
   person(200, 1640, 1.25, K, C3, bob); person(270, 1650, 1.05, K3, C2, alive ? Math.abs(Math.sin(u * 7 + 1)) * -8 : 0); person(880, 1660, 1.3, K, C3, alive ? Math.abs(Math.sin(u * 7 + 2)) * -8 : 0);
@@ -180,33 +174,31 @@ function square(u, alive) {
 function s2(t) { square(t - 4, false); tag('…إلا النت', 450, t, 4.5, 9.6, { size: 78, dark: true }); tag('كان ناطر', 568, t, 5.0, 9.6, { size: 72, rot: 1.4 }); }
 function s3b(t) { square(t - 13.5, true); tag('من قلب حمص', 480, t, 13.8, 15.75, { size: 92, green: true }); }
 
-// ================= 3 — the ablaq arch lights up into Wi-Fi (10–13.5) =================
+// ================= 3 — through an ablaq arch: the mosque, and the arch becomes Wi-Fi (10–13.5) =================
 function s3(t) {
-  const u = t - 10, z = lerp(1.12, 1, eout(seg(u, 0, 1.2)));
-  rect(C2, 0, 0, 0, W, H);
-  ctx.save(); ctx.translate(540, 1100); ctx.scale(z, z); ctx.translate(-540, -1100);
-  // mosque behind
-  rect(C3, .8, 120, 1180, 840, 500); dome(540, 1180, 190, C3, .8); dome(260, 1180, 90, C3, .6); dome(820, 1180, 90, C3, .6); minaret(100, 1700, 900, C3, .8); minaret(980, 1700, 900, C3, .8);
-  // wall with the arch opening
-  const cx = 540, cy = 1210;
-  paper(C1, 2, () => { ctx.rect(-40, 560, W + 80, 1500); ctx.moveTo(cx - 230, 1990); ctx.lineTo(cx - 230, cy); ctx.arc(cx, cy, 230, Math.PI, 0); ctx.lineTo(cx + 230, 1990); ctx.closePath(); }); ctx.fillStyle = C1;
-  // re-cut the opening (even-odd)
-  ctx.save(); ctx.beginPath(); ctx.moveTo(cx - 230, 2000); ctx.lineTo(cx - 230, cy); ctx.arc(cx, cy, 230, Math.PI, 0); ctx.lineTo(cx + 230, 2000); ctx.closePath(); ctx.clip();
-  rect(K2, 0, 0, 0, W, H); rect(K, 0, cx - 150, cy + 120, 300, 900); for (let k = 0; k < 4; k++) rect(K3, 0, cx - 230, cy + 260 + k * 150, 460, 8);
-  ctx.strokeStyle = C4; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, cy - 230); ctx.lineTo(cx, cy - 20); ctx.stroke();
-  ctx.restore();
-  // three nested voussoir bands
+  const u = t - 10, z = lerp(1.1, 1, eout(seg(u, 0, 1.2))), cx = 540, cy = 1230, R0 = 330;
+  rect(C1, 0, 0, 0, W, H);
+  ctx.save(); ctx.translate(540, 1150); ctx.scale(z, z); ctx.translate(-540, -1150);
+  // what we see through the arch
+  circ(C2, .8, 760, 1010, 80);
+  khalidMosque(cx + Math.sin(u * .6) * 6, 1760, .7);
+  rect(K2, 0, -100, 1760, W + 200, 400);
+  // the wall around the opening (cut paper)
+  ctx.save(); ctx.shadowColor = 'rgba(28,18,6,.45)'; ctx.shadowBlur = 26; ctx.shadowOffsetY = 12; ctx.fillStyle = C2; ctx.beginPath(); ctx.rect(-200, 300, W + 400, 2000);
+  ctx.moveTo(cx - R0, 2100); ctx.lineTo(cx - R0, cy); ctx.arc(cx, cy, R0, Math.PI, 0); ctx.lineTo(cx + R0, 2100); ctx.closePath(); ctx.fill('evenodd'); ctx.restore();
+  // three nested voussoir bands that light up one by one
   for (let k = 2; k >= 0; k--) {
-    const r0 = 240 + k * 96, r1 = r0 + 84, on = eout(seg(u, .8 + k * .65, 1.15 + k * .65)), n = 9 + k * 2;
-    for (let i = 0; i < n; i++) { const a0 = Math.PI + i / n * Math.PI, a1 = Math.PI + (i + 1) / n * Math.PI; const base = i % 2 ? C1 : K, lit = i % 2 ? GL : G; paper(on > .5 ? lit : base, 1, () => { ctx.arc(cx, cy, r1, a0, a1); ctx.arc(cx, cy, r0, a1, a0, true); ctx.closePath(); }); }
-    for (const sx of [-1, 1]) ablaq(sx < 0 ? cx - r1 : cx + r0, cy, r1 - r0, 800, 9, .8, on > .5 ? G : K, on > .5 ? GL : C1);
+    const r0 = R0 + 6 + k * 78, r1 = r0 + 70, on = eout(seg(u, .8 + k * .65, 1.15 + k * .65)), n = 11 + k * 2;
+    for (let i = 0; i < n; i++) { const a0 = Math.PI + i / n * Math.PI, a1 = Math.PI + (i + 1) / n * Math.PI; paper(on > .5 ? (i % 2 ? GL : G) : (i % 2 ? C1 : K), 1, () => { ctx.arc(cx, cy, r1, a0, a1); ctx.arc(cx, cy, r0, a1, a0, true); ctx.closePath(); }); }
+    for (const sx of [-1, 1]) ablaq(sx < 0 ? cx - r1 : cx + r0, cy, r1 - r0, 900, 10, .8, on > .5 ? G : K, on > .5 ? GL : C1);
   }
   // the hanging lamp is the Wi-Fi dot
-  const lampOn = seg(u, .4, .7); circ(lampOn > .5 ? G : C3, 1.2, cx, cy - 10, 30); if (lampOn > .5) { ctx.save(); const g = ctx.createRadialGradient(cx, cy - 10, 10, cx, cy - 10, 220); g.addColorStop(0, 'rgba(184,240,143,.55)'); g.addColorStop(1, 'rgba(184,240,143,0)'); ctx.fillStyle = g; ctx.fillRect(cx - 220, cy - 230, 440, 440); ctx.restore(); }
+  const lampOn = seg(u, .4, .7); ctx.strokeStyle = K3; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, cy - R0); ctx.lineTo(cx, cy - R0 + 96); ctx.stroke();
+  if (lampOn > .5) { const g = ctx.createRadialGradient(cx, cy - R0 + 120, 8, cx, cy - R0 + 120, 170); g.addColorStop(0, 'rgba(184,240,143,.6)'); g.addColorStop(1, 'rgba(184,240,143,0)'); ctx.fillStyle = g; ctx.fillRect(cx - 170, cy - R0 - 50, 340, 340); }
+  circ(lampOn > .5 ? G : C3, 1.2, cx, cy - R0 + 120, 28);
   ctx.restore();
-  // sticker: it IS a Wi-Fi symbol
-  const st = eback(seg(u, 2.5, 2.95)); if (st > 0) { ctx.save(); ctx.translate(850, 800); ctx.rotate(.14); ctx.scale(st, st); circ(C1, 2, 0, -40, 150); wifi(0, 30, .78, 3); ctx.restore(); }
-  tag('لهيك جبنالك ياه', 500, t, 10.5, 13.2, { size: 80, dark: true });
+  const st = eback(seg(u, 2.5, 2.95)); if (st > 0) { ctx.save(); ctx.translate(880, 760); ctx.rotate(.14); ctx.scale(st, st); circ(C1, 2, 0, -40, 140); wifi(0, 26, .72, 3); ctx.restore(); }
+  tag('لهيك جبنالك ياه', 480, t, 10.5, 13.2, { size: 80, dark: true });
 }
 
 // ================= 4 — the courtyard house (16–22) =================
@@ -255,9 +247,30 @@ function s4(t) {
 
 // ================= 5 — the covered souq (22–28) =================
 function icon(kind, s) { ctx.save(); ctx.scale(s, s);
-  if (kind === 'cam') { rect(K3, .5, 46, -60, 60, 16); rect(K3, .5, 90, -90, 20, 80); paper('#fff', .8, () => rrp(-90, -40, 150, 76, 22)); circ(K, .4, -70, -2, 34); circ(G, 0, -70, -2, 16); rect(K, .3, -100, -54, 170, 14, 6); }
-  if (kind === 'sun') { paper(K, .8, () => { ctx.moveTo(-90, 50); ctx.lineTo(-60, -50); ctx.lineTo(90, -50); ctx.lineTo(60, 50); ctx.closePath(); }); ctx.strokeStyle = C1; ctx.lineWidth = 5; for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(-90 + k * 37.5 + 0, 50); ctx.lineTo(-60 + k * 37.5, -50); ctx.stroke(); } ctx.beginPath(); ctx.moveTo(-75, 0); ctx.lineTo(75, 0); ctx.stroke(); circ(G, .6, 78, -78, 26); }
-  if (kind === 'ac') { paper('#fff', .8, () => rrp(-100, -50, 200, 84, 16)); rect(K, 0, -80, 14, 160, 8, 4); rect(C3, 0, -80, -4, 160, 6, 3); ctx.strokeStyle = G; ctx.lineWidth = 7; ctx.lineCap = 'round'; for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(k * 50, 48); ctx.quadraticCurveTo(k * 50 + 12, 66, k * 50, 84); ctx.stroke(); } }
+  if (kind === 'cam') {
+    // wall plate + arm + ball joint
+    rect(K3, .8, 118, -96, 22, 150, 6); rect(K3, .6, 62, -74, 62, 18, 6); rect(K3, .6, 62, -74, 18, 52, 6); circ(K, .5, 71, -22, 15);
+    // body, sunshade and front ring
+    paper('#FFFFFF', 1.2, () => rrp(-104, -52, 196, 88, 30));
+    rect('#E3E7EC', 0, -64, 14, 150, 12, 6);
+    paper(K, 1, () => rrp(-150, -70, 236, 22, 10));
+    rect(G, 0, 30, -48, 10, 80);
+    paper(K, .8, () => ctx.ellipse(-106, -8, 30, 44, 0, 0, 7)); paper(K3, 0, () => ctx.ellipse(-110, -8, 20, 30, 0, 0, 7)); paper('#0d1b2c', 0, () => ctx.ellipse(-112, -8, 12, 18, 0, 0, 7)); circ('#fff', 0, -117, -17, 4);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * 6.283; circ('#E5484D', 0, -110 + Math.cos(a) * 22, -8 + Math.sin(a) * 34, 2.6); }
+    // field of view
+    ctx.save(); ctx.globalAlpha = .28; ctx.fillStyle = G; ctx.beginPath(); ctx.moveTo(-136, -8); ctx.lineTo(-240, -70); ctx.lineTo(-240, 80); ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  if (kind === 'sun') {
+    circ(G, .8, 96, -96, 30); ctx.strokeStyle = G; ctx.lineWidth = 7; ctx.lineCap = 'round'; for (let k = 0; k < 8; k++) { const a = k / 8 * 6.283; ctx.beginPath(); ctx.moveTo(96 + Math.cos(a) * 42, -96 + Math.sin(a) * 42); ctx.lineTo(96 + Math.cos(a) * 56, -96 + Math.sin(a) * 56); ctx.stroke(); }
+    rect(K3, .5, -70, 40, 12, 60); rect(K3, .5, 50, 40, 12, 60);
+    paper('#DCE3EA', 1, () => { ctx.moveTo(-124, 62); ctx.lineTo(-84, -64); ctx.lineTo(112, -64); ctx.lineTo(72, 62); ctx.closePath(); });
+    paper('#17355F', 0, () => { ctx.moveTo(-110, 52); ctx.lineTo(-76, -54); ctx.lineTo(100, -54); ctx.lineTo(66, 52); ctx.closePath(); });
+    ctx.strokeStyle = '#DCE3EA'; ctx.lineWidth = 4; for (let k = 1; k < 5; k++) { ctx.beginPath(); ctx.moveTo(-110 + k * 35.2, 52); ctx.lineTo(-76 + k * 35.2, -54); ctx.stroke(); } for (let k = 1; k < 3; k++) { const q = k / 3; ctx.beginPath(); ctx.moveTo(lerp(-110, -76, q), lerp(52, -54, q)); ctx.lineTo(lerp(66, 100, q), lerp(52, -54, q)); ctx.stroke(); }
+  }
+  if (kind === 'ac') {
+    paper('#FFFFFF', 1.2, () => rrp(-130, -70, 260, 100, 22)); rect('#E3E7EC', 0, -130, -6, 260, 6); rect(K, 0, -108, 8, 216, 10, 5); circ(G, 0, 100, -40, 7); rect('#E3E7EC', 0, -108, -48, 120, 8, 4);
+    ctx.strokeStyle = G; ctx.lineWidth = 8; ctx.lineCap = 'round'; for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(k * 70, 44); ctx.bezierCurveTo(k * 70 + 18, 62, k * 70 - 18, 80, k * 70, 100); ctx.stroke(); }
+  }
   ctx.restore(); }
 function s5(t) {
   const u = t - 22; rect(K, 0, 0, 0, W, H);
@@ -286,7 +299,7 @@ function s5(t) {
       const sg = it.sign, sw = Math.sin(u * 2.4 + sg.z) * .05; ctx.rotate(sw); ctx.globalAlpha = seg(dz, 1.25, 1.7); ctx.translate(0, 60);
       ctx.strokeStyle = C3; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-150, -420); ctx.lineTo(-150, -250); ctx.moveTo(150, -420); ctx.lineTo(150, -250); ctx.stroke();
       rect(C1, 2.4, -230, -250, 460, 420, 26); ctx.strokeStyle = 'rgba(35,36,39,.2)'; ctx.lineWidth = 4; ctx.setLineDash([16, 12]); ctx.beginPath(); rrp(-212, -232, 424, 384, 16); ctx.stroke(); ctx.setLineDash([]);
-      ctx.save(); ctx.translate(0, -100); icon(sg.kind, 1.25); ctx.restore(); rect(G, .6, -190, 44, 380, 96, 14); label(sg.text, 0, 94, 54, '#fff');
+      ctx.save(); ctx.translate(sg.kind === 'cam' ? 30 : 0, -108); icon(sg.kind, 1.1); ctx.restore(); rect(G, .6, -190, 44, 380, 96, 14); label(sg.text, 0, 94, 54, '#fff');
     }
     ctx.restore();
   }
