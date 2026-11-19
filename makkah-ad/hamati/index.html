@@ -243,7 +243,11 @@ function endCard(t) {
   const cp = eout(seg(lt, 3.2, 3.6)); ctx.save(); ctx.globalAlpha = cp; ctx.font = `700 50px ${FONT}`; ctx.direction = 'rtl'; const w = ctx.measureText('احجز تركيبك الآن معنا').width + 90; ctx.fillStyle = '#fff'; rr(W / 2 - w / 2, 1700, w, 96, 48); ctx.fill(); txt('احجز تركيبك الآن معنا', W / 2, 1750, 50, NAVY); ctx.restore();
 }
 
-function renderFrame(t) {
+// music grid (120 BPM): map beat-aligned film time -> original animation time
+const WARP = [[0, 0], [1.5, 1.4], [2.5, 2.25], [3.5, 3.55], [4.5, 4.55], [5.0, 4.95], [7.0, 6.95], [7.5, 7.3], [9.0, 9.0], [10.5, 10.6], [11.5, 11.3], [13.0, 13.1], [15.0, 14.9], [16.5, 16.4], [18.5, 18.75], [20.5, 20.6], [23.0, 22.9], [25.0, 25.2], [26.0, 25.8], [28.0, 28.2], [34, 34]];
+function warpT(t) { for (let i = 1; i < WARP.length; i++) if (t <= WARP[i][0]) { const [a0, b0] = WARP[i - 1], [a1, b1] = WARP[i]; return b0 + (t - a0) / (a1 - a0) * (b1 - b0); } return t; }
+function renderFrame(tm) {
+  const t = warpT(tm);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.clearRect(0, 0, W, H);
   if (t < 1.4) title(t);
   else if (t < 10.6) sceneCall(t);
