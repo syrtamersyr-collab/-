@@ -8,83 +8,84 @@ def note(ch, p, t, d, v):
     if t >= DUR: return
     ev.append((int(bt(t) * TPB), mido.Message('note_on', channel=ch, note=int(p), velocity=max(1, min(127, int(v))))))
     ev.append((int(bt(t + d) * TPB) - 1, mido.Message('note_off', channel=ch, note=int(p), velocity=0)))
-ACC, CLA, PIZ, BAS, STR, CEL, BRS, DR = 0, 1, 2, 3, 4, 5, 6, 9
-for ch, p in ((ACC, 21), (CLA, 71), (PIZ, 45), (BAS, 58), (STR, 48), (CEL, 8), (BRS, 61)): prog(ch, p)
-for ch, v in ((ACC, 92), (CLA, 96), (PIZ, 100), (BAS, 96), (STR, 78), (CEL, 100), (BRS, 96), (DR, 112)): cc(ch, 7, v)
-for ch in range(10): cc(ch, 91, 45 if ch != DR else 20)
-HJ = [62, 63, 66, 67, 69, 70, 72, 74, 75, 78, 79]           # D hijaz
-def darbuka(t0, t1, vel=1.0, fast=False):            # doum-tek pattern (maqsum)
+
+# --- v2: playful cartoon swing (honky-tonk piano, whistle, bassoon, upright bass, brushes, glockenspiel), C major, 120 BPM
+BPM = 120; B = 60 / BPM
+PNO, WHI, BSN, UB, GLK, BRS, VIB, DR = 0, 1, 2, 3, 4, 5, 6, 9
+for ch, p in ((PNO, 3), (WHI, 78), (BSN, 70), (UB, 32), (GLK, 9), (BRS, 56), (VIB, 11)): prog(ch, p)
+for ch, v in ((PNO, 92), (WHI, 96), (BSN, 100), (UB, 108), (GLK, 92), (BRS, 100), (VIB, 90), (DR, 100)): cc(ch, 7, v)
+for ch in range(10): cc(ch, 91, 40 if ch != DR else 18)
+sw = lambda k: (k // 2) * B + (B * .66 if k % 2 else 0)          # swung eighth k
+def brushes(t0, t1, v=1.0):
     t = t0
-    pat = [(0, 'D'), (.5, 't'), (1, 't'), (1.5, 'D'), (2, 't'), (3, 'D'), (3.5, 't')]
     while t < t1 - .01:
-        for o, k in pat:
-            tt = t + o * B * (.5 if fast else 1)
-            if tt >= t1: break
-            if k == 'D': note(DR, 61, tt, .15, 112 * vel); note(DR, 35, tt, .15, 70 * vel)
-            else: note(DR, 60, tt, .1, 86 * vel)
-        note(DR, 54, t + B * (.5 if fast else 1) * 2.5, .1, 60 * vel)
-        t += 4 * B * (.5 if fast else 1)
-# 0-1.4 opening sting
-for k in range(10): note(DR, 54, .05 + k * .07, .06, 60 + k * 5)
-for p in (50, 62, 66, 69): note(ACC, p, .75, .6, 110)
-note(DR, 61, .75, .2, 120)
-# 1.4-3.55 sneaky build to the sneeze: pizzicato hijaz walk, rising
-t = 1.4; i = 0
-while t < 3.5:
-    note(PIZ, HJ[[0, 2, 4, 2, 3, 5, 6, 5][i % 8]] - 12 + (i // 8) * 2, t, B * .3, 80 + i * 3); 
-    if i % 2 == 0: note(BAS, 38, t, B * .4, 80)
-    t += B / 2; i += 1
-note(CLA, 74, 3.0, .5, 90); note(CLA, 79, 3.3, .25, 100)
-# 3.55-4.55 dead silence (comic freeze) then crash-zoom stabs "dun dun DUN"
-for k, (p, d) in enumerate([(50, .16), (51, .16), (54, .7)]):
-    for q in (p, p + 12, p + 15): note(BRS, q, 4.55 + k * .2, d, 120)
-    note(DR, 41, 4.55 + k * .2, .2, 120)
-# 4.8-10.5 light hijaz groove under the dialogue
-darbuka(4.95, 10.5, .7)
-mel = [(0, 1), (2, .5), (3, .5), (4, 1), (3, .5), (2, .5), (1, 1), (0, 2)]
+        for k in range(4):
+            note(DR, 42, t + k * B, .1, 70 * v); note(DR, 42, t + k * B + B * .66, .1, 50 * v)
+            if k % 2: note(DR, 38, t + k * B, .1, 64 * v)
+            else: note(DR, 36, t + k * B, .15, 84 * v)
+        t += 4 * B
+def walk(t0, t1, roots):
+    t = t0; i = 0
+    while t < t1 - .01:
+        r = roots[(i // 4) % len(roots)]; note(UB, [r, r + 4, r + 7, r + 9][i % 4], t, B * .85, 100); t += B; i += 1
+def comp(t0, t1, chords, v=70):
+    t = t0; i = 0
+    while t < t1 - .01:
+        for p in chords[(i // 2) % len(chords)]: note(PNO, p, t + B * .66, B * .3, v)
+        t += B * 2 if False else B; i += 1
+C, F, G, A = [60, 64, 67, 70], [65, 69, 72, 75], [67, 71, 74, 77], [57, 61, 64, 67]
+# 0-1.4 sting: glissando + button
+for k in range(9): note(PNO, 60 + k * 2, .05 + k * .05, .1, 80 + k * 4)
+for p in (48, 60, 64, 67, 72): note(BRS if p > 50 else UB, p, .7, .45, 112)
+note(DR, 49, .7, .6, 100)
+# 1.4-3.55 tiptoe: staccato bassoon + pizz-like piano, tension creeping up a semitone each bar
+for k in range(8):
+    t = 1.4 + k * B / 2
+    note(BSN, [48, 55, 48, 55, 49, 56, 49, 56][k], t, B * .25, 96)
+for k in range(8): note(GLK, [79, 80, 81, 82, 83, 84, 85, 86][k], 1.4 + k * .26, .1, 50 + k * 6)
+note(WHI, 84, 3.1, .2, 90); note(WHI, 91, 3.32, .2, 100)
+# 3.55-4.55 silence (freeze); 4.55 bassoon "uh-oh" slide + brass stabs
+for k, p in enumerate([55, 54, 53, 52, 51, 50]): note(BSN, p, 4.55 + k * .07, .1, 110)
+for k, (ch, d) in enumerate([([48, 51, 54], .15), ([49, 52, 55], .15), ([47, 50, 53, 56], .6)]):
+    for p in ch: note(BRS, p + 12, 4.55 + k * .18, d, 118)
+# 4.95-10.5 gossip swing: brushes + walking bass + whistled tune
+brushes(4.95, 10.5, .8); walk(4.95, 10.5, [36, 41, 43, 36]); comp(4.95, 10.5, [C, C, F, F, G, G, C, C], 60)
+tune = [(76, 1), (74, .66), (72, .34), (74, 1), (67, 1), (69, .66), (72, .34), (76, .66), (74, .34), (72, 2)]
 t = 5.0
-while t < 10.2:
-    for d, l in mel:
+for rep in range(3):
+    for p, l in tune:
         if t >= 10.3: break
-        note(ACC, HJ[d] + 12, t, l * B * .9, 70); t += l * B
-for k in range(int(5.5 / B)): note(BAS, [38, 45][k % 2], 4.95 + k * B, B * .7, 84)
-note(CLA, 74, 10.0, .2, 100); note(CLA, 81, 10.25, .35, 110)   # cue the run
-# 10.6-16.3 chase: double-time darbuka, clarinet runs
-darbuka(10.6, 16.3, 1.0, fast=True)
-t = 10.6; k = 0
-while t < 16.2:
-    run = [0, 1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3]
-    for j, d in enumerate(run):
-        tt = t + j * B / 4
-        if tt >= 16.2: break
-        note(CLA, HJ[d] + (0 if k % 2 == 0 else 5), tt, B / 4 * .9, 92)
-    for j in range(6): note(BAS, [38, 50][j % 2], t + j * B / 2, B / 2 * .8, 98)
-    for p in (62, 66, 69): note(ACC, p, t, B * 2.7, 72)
-    t += 3 * B; k += 1
-# 16.4-20.5 rooftop: bright major lift + celesta pings
-for j, chord in enumerate([[62, 66, 69], [67, 71, 74], [69, 73, 76], [74, 78, 81]]):
-    for p in chord: note(STR, p, 16.5 + j * 1.0, 1.0, 80 + j * 8)
-for j in range(5): note(CEL, 84 + j * 2, 17.9 + j * .22, .3, 100)
-for p in (62, 66, 69, 74): note(BRS, p, 18.75, .9, 118)
-note(DR, 49, 18.75, 1.2, 110)
-# 20.6-22.8 dreamy: strings + celesta sparkle
-for p in (62, 66, 69, 74): note(STR, p, 20.7, 2.1, 72)
-for j in range(8): note(CEL, [86, 90, 93, 98][j % 4], 20.9 + j * .15, .3, 96)
-# 22.85 record scratch (fx) -> silence, then 25.2 joyful dabke to the end
-darbuka(25.2, 33.3, 1.0)
-for k in range(int(8.1 / (B / 2))):
-    tt = 25.2 + k * B / 2
-    if tt > 33.2: break
-    note(DR, 39, tt, .1, 76 if k % 2 else 0) if k % 4 == 2 else None
-dab = [(4, .5), (4, .5), (5, .5), (4, .5), (3, .5), (2, .5), (3, 1), (2, .5), (1, .5), (2, .5), (3, .5), (2, 1), (0, 1)]
+        note(WHI, p + 12, t, l * B * .9, 84); t += l * B
+# 10.6-16.3 chase: fast piano runs, double-time brushes, bassoon ostinato
+for k in range(int(5.7 / (B / 2))):
+    t = 10.6 + k * B / 2
+    note(DR, 38 if k % 2 else 36, t, .08, 90); note(DR, 42, t + B / 4, .05, 60)
+    note(BSN, [48, 48, 55, 48, 51, 48, 55, 53][k % 8], t, B * .4, 100)
+for k in range(int(5.6 / (B / 4))):
+    t = 10.6 + k * B / 4
+    note(PNO, [72, 74, 76, 79, 81, 79, 76, 74][k % 8] + (5 if (k // 16) % 2 else 0), t, B / 4 * .8, 74)
+for k in range(5): note(BRS, 79, 11.6 + k * 1.0, .15, 104); note(BRS, 76, 11.6 + k * 1.0, .15, 98)
+# 16.4-20.5 rooftop: big major lift with vibraphone
+for j, ch in enumerate([[60, 64, 67, 72], [65, 69, 72, 77], [67, 71, 74, 79], [72, 76, 79, 84]]):
+    for p in ch: note(VIB, p, 16.5 + j * 1.0, .95, 84 + j * 6)
+    note(UB, ch[0] - 24, 16.5 + j * 1.0, .9, 104)
+for j in range(5): note(GLK, 84 + [0, 2, 4, 7, 12][j], 17.9 + j * .22, .3, 100)
+for p in (60, 64, 67, 72, 76): note(BRS, p, 18.75, .8, 120)
+note(DR, 49, 18.75, 1.2, 108)
+# 20.6-22.8 dreamy: vibraphone arps + glock sparkle
+for j in range(16): note(VIB, [72, 76, 79, 84, 79, 76][j % 6], 20.7 + j * .135, .4, 70)
+for j in range(8): note(GLK, [88, 91, 96, 100][j % 4], 20.95 + j * .15, .3, 90)
+# 25.2-33.2 victory: up-tempo swing with whistle + brass shout chorus
+brushes(25.2, 33.2, 1.0); walk(25.2, 33.2, [36, 45, 38, 43]); comp(25.2, 33.2, [C, A, [62, 65, 69, 72], G], 74)
+chorus = [(79, .5), (81, .5), (79, .5), (76, .5), (72, 1), (74, .66), (76, .34), (79, 1), (77, .5), (76, .5), (74, 2)]
 t = 25.25
-while t < 33.0:
-    for d, l in dab:
+for rep in range(3):
+    for p, l in chorus:
         if t >= 33.0: break
-        note(ACC, HJ[d] + 12, t, l * B * .85, 96); note(CLA, HJ[d] + 12, t, l * B * .85, 64); t += l * B
-for k in range(int(8 / B)): note(BAS, [38, 45, 43, 45][k % 4], 25.2 + k * B, B * .6, 98)
-for q in (38, 50, 62, 66, 69, 74): note(BRS if q > 50 else BAS, q, 33.2, .7, 122)
-note(DR, 49, 33.2, 1, 120); note(DR, 61, 33.2, .3, 127)
+        note(WHI, p + 12, t, l * B * .85, 92); note(BSN, p - 12, t, l * B * .85, 70); t += l * B
+for k in range(8): note(BRS, 72, 26.2 + k * 1.0, .18, 104); note(BRS, 76, 26.2 + k * 1.0, .18, 100)
+for p in (36, 48, 60, 64, 67, 72, 76): note(BRS if p > 50 else UB, p, 33.2, .7, 124)
+note(DR, 49, 33.2, 1, 120); note(DR, 36, 33.2, .3, 127)
 ev.sort(key=lambda e: e[0]); mid = mido.MidiFile(ticks_per_beat=TPB); tr = mido.MidiTrack(); mid.tracks.append(tr)
 tr.append(mido.MetaMessage('set_tempo', tempo=mido.bpm2tempo(BPM), time=0)); last = 0
 for tt, m in ev: tr.append(m.copy(time=max(0, tt - last))); last = max(last, tt)
