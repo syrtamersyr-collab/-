@@ -43,9 +43,25 @@ function fixCard2(c) {
   g.shadowColor = 'transparent';
 }
 function fixCard4(c) {
-  const g = c.getContext('2d'); const w = 470, h = w * BEAM.height / BEAM.width, x = 40, y = 1290;
-  const glow = g.createRadialGradient(x + w / 2, y + h / 2, 40, x + w / 2, y + h / 2, w * .75); glow.addColorStop(0, 'rgba(120,230,70,.22)'); glow.addColorStop(1, 'rgba(120,230,70,0)'); g.fillStyle = glow; g.fillRect(x - 200, y - 200, w + 400, h + 400);
-  g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 40; g.shadowOffsetY = 20; g.drawImage(BEAM, x, y, w, h); g.restore();
+  // the real antenna, mounted on a pole that stands on the rooftop slab
+  const g = c.getContext('2d'), cx = 300, base = 1548, w = 400, h = w * BEAM.height / BEAM.width, top = 1290 - h;
+  const glow = g.createRadialGradient(cx, top + h / 2, 30, cx, top + h / 2, 330); glow.addColorStop(0, 'rgba(120,230,70,.20)'); glow.addColorStop(1, 'rgba(120,230,70,0)'); g.fillStyle = glow; g.fillRect(cx - 340, top - 200, 680, h + 400);
+  const pole = g.createLinearGradient(cx - 10, 0, cx + 10, 0); pole.addColorStop(0, '#6f7b88'); pole.addColorStop(.45, '#d9dee4'); pole.addColorStop(1, '#5d6874');
+  g.save(); g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 14; g.fillStyle = pole; g.fillRect(cx - 10, top + h * .55, 20, base - (top + h * .55)); g.restore();
+  g.fillStyle = '#4b5561'; g.beginPath(); g.ellipse(cx, base, 46, 12, 0, 0, 7); g.fill(); g.fillStyle = '#8a95a1'; g.beginPath(); g.ellipse(cx, base - 4, 40, 9, 0, 0, 7); g.fill();
+  g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 36; g.shadowOffsetY = 16; g.drawImage(BEAM, cx - w / 2, top, w, h); g.restore();
+  // body text, set again with normal Arabic spacing
+  g.font = `700 50px ${DISPLAY}`; g.direction = 'rtl'; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillStyle = '#ffffff';
+  g.shadowColor = 'rgba(0,0,0,.4)'; g.shadowBlur = 12;
+  ['تثبيت احترافي لجهاز', 'الإنترنت على السطح', 'قبل العواصف'].forEach((l, i) => g.fillText(l, 1000, 1095 + i * 72));
+  g.shadowColor = 'transparent';
+}
+// tip labels, set on one line inside each card's green tag
+const TAGS = { 2: ['نصيحة 01', 758, 54, 1022, 135], 3: ['نصيحة 02', 731, 78, 1036, 174], 4: ['نصيحة 03', 713, 69, 1029, 150], 5: ['نصيحة 04', 755, 82, 999, 148], 6: ['نصيحة 05', 758, 54, 1025, 128] };
+function tag(g, i) {
+  const t = TAGS[i]; if (!t) return; const [txt, x0, y0, x1, y1] = t;
+  g.font = `700 46px ${DISPLAY}`; g.direction = 'rtl'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffffff';
+  g.fillText(txt, (x0 + x1) / 2, (y0 + y1) / 2 + 2);
 }
 function logoBadge(g, s = 1, x = 44, y = 44) {
   const w = 190 * s, h = w * LOGO.height / LOGO.width, p = 18 * s;
@@ -54,7 +70,7 @@ function logoBadge(g, s = 1, x = 44, y = 44) {
 }
 const LOGO_AT = { 7: [904, 196] };
 function buildCards(imgs) {
-  return imgs.map((im, i) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.drawImage(im, 0, 0, W, H); if (i === 1) fixCard2(c); if (i === 3) fixCard4(c); const [lx, ly] = LOGO_AT[i] || [24, 24]; logoBadge(g, .6, lx, ly); return c; });
+  return imgs.map((im, i) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.drawImage(im, 0, 0, W, H); if (i === 1) fixCard2(c); if (i === 3) fixCard4(c); tag(g, i); const [lx, ly] = LOGO_AT[i] || [24, 24]; logoBadge(g, .6, lx, ly); return c; });
 }
 
 // ---------- video ----------
@@ -66,7 +82,7 @@ function drawShot(i, t) {
   const z = lerp(1.0, 1.07, eio(seg(u, 0, d))), dx = (i % 2 ? -1 : 1) * 14 * seg(u, 0, d);
   ctx.save(); ctx.translate(W / 2 + dx, H / 2); ctx.scale(z, z); ctx.drawImage(CARDS[i], -W / 2, -H / 2); ctx.restore();
 }
-function render(t) {
+function renderFrame(t) {
   ctx.save(); ctx.clearRect(0, 0, W, H);
   let i = SHOTS.findIndex(([a, b]) => t >= a && t < b); if (i < 0) i = SHOTS.length - 1;
   const [a] = SHOTS[i], u = t - a, T = .45;
@@ -93,7 +109,7 @@ window.ready = (async () => {
   CARDS = buildCards(await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map(k => load(`cards/card${k}.png`))));
   return true;
 })();
-window.render = t => t < 0 ? card(-t - 1) : render(t);
+window.render = t => t < 0 ? card(-t - 1) : renderFrame(t);
 </script>
 </body>
 </html>
