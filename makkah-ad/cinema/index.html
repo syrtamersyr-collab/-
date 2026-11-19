@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>بدأت الشتوية — سينمائي</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// Cinematic 2.5D winter film for Makkah Technologies. 1080x1920, 40s. render(t) draws one frame.
+const W = 1080, H = 1920, DUR = 40;
+const cv = document.getElementById('c'); const ctx = cv.getContext('2d');
+const DISPLAY = '"Readex Pro","IBM Plex Sans Arabic",sans-serif', BODY = '"IBM Plex Sans Arabic","Readex Pro",sans-serif';
+const GREEN = '#5BC72A', NAVY = '#02376C';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+function rng(s) { return () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+const load = s => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = s; });
+const I = {};
+
+// ---------- shots ----------
+// each scene: bg + obj layers with different depth; camera dolly from z0 to z1 and pan
+const SHOTS = [
+  { a: 0, b: 5, kind: 'homs' },
+  { a: 5, b: 9, k: 1, lines: [['بدأت الشتوية', '#fff'], ['بيتك جاهز؟', GREEN]], cam: [1.04, 1.16, 0, -30], obj: [1.0, 1.10] },
+  { a: 9, b: 14, k: 2, lines: [['الكهربا قاطعة؟', '#fff'], ['النت ما بيقطع', GREEN]], sub: 'طاقة شمسية للراوتر', cam: [1.08, 1.02, 40, -40], obj: [1.0, 1.07] },
+  { a: 14, b: 19, k: 3, lines: [['الهوا قوي؟', '#fff'], ['جهازك ثابت', GREEN]], sub: 'تثبيت احترافي على السطح', cam: [1.02, 1.12, -20, 20], obj: [1.0, 1.14] },
+  { a: 19, b: 24, k: 4, lines: [['المطر ما بيوقف', '#fff'], ['كاميراتك', GREEN]], sub: 'مراقبة من جوالك', cam: [1.03, 1.10, 30, 0], obj: [1.0, 1.22], rec: true },
+  { a: 24, b: 28, k: 5, lines: [['جهّز مكيّفك', GREEN], ['للشتوية', '#fff']], sub: 'صيانة قبل البرد', cam: [1.06, 1.0, -30, 30], obj: [1.04, 1.0] },
+  { a: 28, b: 32, k: 6, lines: [['عطل بالشتوية؟', '#fff'], ['متابعة فنية', GREEN]], cam: [1.02, 1.10, 0, 0], obj: [1.0, 1.08], spin: true },
+  { a: 32, b: 36, k: 7, lines: [['احجز تركيبك', '#fff'], ['الآن معنا', GREEN]], cam: [1.08, 1.0, 40, 0], obj: [1.0, 1.06], list: true },
+  { a: 36, b: 40, kind: 'end' },
+];
+function drawLayer(img, z, dx, dy) { const w = W * z, h = H * z; ctx.drawImage(img, (W - w) / 2 + dx, (H - h) / 2 + dy, w, h); }
+
+// ---------- weather ----------
+const R1 = rng(3), DROPS = []; for (let i = 0; i < 420; i++) DROPS.push([R1() * W, R1() * H, .3 + R1() * .9, R1()]);
+const R2 = rng(5), LENS = []; for (let i = 0; i < 26; i++) LENS.push([R2() * W, R2() * H, 6 + R2() * 18, R2() * 40]);
+function rain(t, k = 1) {
+  ctx.save(); ctx.lineCap = 'round';
+  for (const [x0, y0, d, s] of DROPS) {
+    const v = 1400 + d * 1600, len = 30 + d * 70, y = ((y0 + t * v) % (H + 200)) - 100, x = ((x0 - t * v * .16) % W + W) % W;
+    ctx.strokeStyle = `rgba(200,225,255,${(.08 + d * .28) * k})`; ctx.lineWidth = .8 + d * 2.2;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - len * .16, y + len); ctx.stroke();
+  }
+  // drops on the lens
+  for (const [x, y, r, born] of LENS) { const a = Math.max(0, Math.sin((t + born) * .9)) * .55 * k; if (a < .02) continue; ctx.globalAlpha = a; const g = ctx.createRadialGradient(x - r * .3, y - r * .3, 1, x, y, r); g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(.35, 'rgba(180,210,255,.25)'); g.addColorStop(1, 'rgba(120,160,220,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+function fog(t, y0 = 1250, a = .35) { ctx.save(); for (let k = 0; k < 3; k++) { const x = ((t * (25 + k * 15) + k * 400) % (W * 2)) - W; const g = ctx.createLinearGradient(0, y0 - 300, 0, H); g.addColorStop(0, 'rgba(160,190,230,0)'); g.addColorStop(.5, `rgba(160,190,230,${a * .5})`); g.addColorStop(1, 'rgba(160,190,230,0)'); ctx.fillStyle = g; ctx.globalAlpha = .6; ctx.fillRect(x, y0 - 300, W * 2, H); } ctx.restore(); }
+const BOLTS = [1.1, 1.35, 4.95, 13.9, 23.9, 31.9, 35.9];
+function lightning(t) { let f = 0; for (const b of BOLTS) { const u = t - b; if (u >= 0 && u < .5) f = Math.max(f, (u < .06 ? 1 : u < .12 ? .25 : u < .18 ? .8 : Math.max(0, 1 - (u - .18) / .3) * .6)); } return f; }
+
+// ---------- kinetic type: words rise out of a mask, with light sweep ----------
+function headline(lines, t0, t, y0 = 300, size = 118) {
+  ctx.save(); ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  lines.forEach(([txt, col], li) => {
+    const p = eout(seg(t, t0 + li * .25, t0 + li * .25 + .7)); if (p <= 0) return;
+    const y = y0 + li * size * 1.18, sz = li ? size * 1.04 : size;
+    ctx.font = `700 ${sz}px ${DISPLAY}`;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, y - sz * .75, W, sz * 1.5); ctx.clip();
+    ctx.translate(0, (1 - p) * sz * 1.2);
+    ctx.shadowColor = 'rgba(0,0,0,.65)'; ctx.shadowBlur = 30; ctx.fillStyle = col; ctx.fillText(txt, W / 2, y);
+    // light sweep
+    const sw = seg(t, t0 + .7 + li * .25, t0 + 1.4 + li * .25);
+    if (sw > 0 && sw < 1) { ctx.shadowBlur = 0; ctx.globalCompositeOperation = 'source-atop'; const x = lerp(-200, W + 200, sw); const g = ctx.createLinearGradient(x - 120, 0, x + 120, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(.5, 'rgba(255,255,255,.75)'); g.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = g; ctx.fillRect(0, y - sz, W, sz * 2); }
+    ctx.restore();
+  });
+  ctx.restore();
+}
+function subline(txt, t0, t, y) { const p = eout(seg(t, t0, t0 + .6)); if (p <= 0) return; ctx.save(); ctx.globalAlpha = p; ctx.font = `500 50px ${BODY}`; ctx.direction = 'rtl'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; const w = ctx.measureText(txt).width; ctx.strokeStyle = 'rgba(91,199,42,.9)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(W / 2 - w / 2 * p, y + 44); ctx.lineTo(W / 2 + w / 2 * p, y + 44); ctx.stroke(); ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 16; ctx.fillStyle = '#E8F0FA'; ctx.fillText(txt, W / 2, y); ctx.restore(); }
+function logo(t, x = W / 2, y = 150, w = 150, a = 1) { const h = w * I.logo.height / I.logo.width, p = 18; ctx.save(); ctx.globalAlpha = a; ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 24; ctx.fillStyle = '#fff'; rr(x - w / 2 - p, y - h / 2 - p, w + 2 * p, h + 2 * p, 24); ctx.fill(); ctx.shadowBlur = 0; ctx.drawImage(I.logo, x - w / 2, y - h / 2, w, h); ctx.restore(); }
+function phone(t, y, a = 1) { ctx.save(); ctx.globalAlpha = a; const w = 760, h = 132; ctx.shadowColor = 'rgba(91,199,42,.55)'; ctx.shadowBlur = 40 + 20 * Math.sin(t * 5); ctx.fillStyle = GREEN; rr(W / 2 - w / 2, y - h / 2, w, h, h / 2); ctx.fill(); ctx.shadowBlur = 0; ctx.font = `700 80px ${BODY}`; ctx.direction = 'ltr'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText('0982 621 531', W / 2, y + 4); ctx.restore(); }
+
+// ---------- special shots ----------
+function homsShot(img, t, u, z0, z1, title) {
+  // stormy sky + lightning, real Homs landmark (sky removed) in front
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#030a17'); g.addColorStop(.55, '#0b2142'); g.addColorStop(1, '#050d1c'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = .55; for (let k = 0; k < 7; k++) { const r = rng(40 + k), x = ((r() * W * 1.6 + t * (18 + k * 6)) % (W * 1.6)) - W * .3, y = 250 + r() * 700, s = 300 + r() * 380; const c = ctx.createRadialGradient(x, y, 10, x, y, s); c.addColorStop(0, 'rgba(70,95,140,.55)'); c.addColorStop(1, 'rgba(20,35,60,0)'); ctx.fillStyle = c; ctx.fillRect(x - s, y - s, 2 * s, 2 * s); } ctx.restore();
+  const isClock = img === I.clock, z = lerp(z0, z1, eio(u)), h = H * (isClock ? 1.02 : .7) * z, w = h * img.width / img.height;
+  const cxFrac = isClock ? .465 : .62;
+  ctx.save(); ctx.filter = isClock ? 'brightness(1.25)' : 'brightness(1.5)'; ctx.drawImage(img, W / 2 - w * cxFrac, H - h * (isClock ? .97 : 1.0), w, h); ctx.restore();
+  const lg = ctx.createLinearGradient(0, H * .55, 0, H); lg.addColorStop(0, 'rgba(3,10,23,0)'); lg.addColorStop(1, 'rgba(3,10,23,.85)'); ctx.fillStyle = lg; ctx.fillRect(0, H * .55, W, H * .45);
+  fog(t, 1500, .45);
+}
+
+function scene(s, t) {
+  const u = seg(t, s.a, s.b), L = I.layers[s.k];
+  if (s.kind === 'homs') {
+    homsShot(I.clock, t, u, 1.0, 1.12);
+    const lp = eout(seg(t, 2.6, 3.3)); if (lp > 0) logo(t, W / 2, 1150, 200 * lerp(.8, 1, lp), lp);
+    headline([['بدأت الشتوية', '#fff'], ['بحمص', GREEN]], 1.2, t, 1480, 120);
+    return;
+  }
+  if (s.kind === 'end') {
+    homsShot(I.mosque, t, u, 1.06, 1.0);
+    ctx.fillStyle = 'rgba(2,10,22,.25)'; ctx.fillRect(0, 0, W, H);
+    const lp = eout(seg(t, 36.3, 37.0)); logo(t, W / 2, 380, 280 * lerp(.85, 1, lp), lp);
+    headline([['مركز مكة للتقنيات', '#fff']], 36.8, t, 760, 82);
+    subline('حمص – القصور – خلف جامع حمود الناصر', 37.6, t, 900);
+    const pp = eout(seg(t, 38.0, 38.6)); if (pp > 0) phone(t, 1080, pp);
+    return;
+  }
+  const [z0, z1, px0, px1] = s.cam, zb = lerp(z0, z1, eio(u)), pan = lerp(px0, px1, eio(u));
+  ctx.save(); ctx.filter = 'blur(1.6px)'; drawLayer(L.bg, zb, pan * .6, 0); ctx.restore();
+  fog(t, 1350, .3);
+  const zo = lerp(s.obj[0], s.obj[1], eio(u)) * zb;
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 40;
+  if (L.obj) { drawLayer(L.obj, zo, pan * 1.4, 0); }
+  ctx.restore();
+  if (s.k === 3) {   // the real antenna on its pole, standing on the roof slab
+    const z = zo, cx = W / 2 + (300 - W / 2) * z + pan * 1.4, base = H / 2 + (1548 - H / 2) * z, w = 420 * z, h = w * I.beam.height / I.beam.width, top = H / 2 + (1300 - H / 2) * z - h + Math.sin(t * 1.3) * 4;
+    ctx.fillStyle = '#c7cfd8'; ctx.fillRect(cx - 9 * z, top + h * .55, 18 * z, base - (top + h * .55));
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 40; ctx.drawImage(I.beam, cx - w / 2, top, w, h); ctx.restore();
+    const gl = (Math.sin(t * 6) + 1) / 2; ctx.fillStyle = `rgba(91,199,42,${.5 + .5 * gl})`; ctx.beginPath(); ctx.arc(cx - w * .2, top + h * .52, 7 * z, 0, 7); ctx.fill();
+  }
+  if (s.rec && Math.sin(t * 7) > -.2) { ctx.fillStyle = '#ff3b30'; ctx.beginPath(); ctx.arc(W / 2 + (560 - W / 2) * zo, H / 2 + (1335 - H / 2) * zo, 9, 0, 7); ctx.fill(); }
+  // grade: vignette + cool top
+  headline(s.lines, s.a + .35, t, 330, 112);
+  if (s.sub) subline(s.sub, s.a + 1.1, t, 640);
+  if (s.list) {
+    ['إنترنت هوائي', 'كاميرات مراقبة', 'طاقة شمسية', 'تكييف'].forEach((n, i) => {
+      const p = eout(seg(t, s.a + 1.0 + i * .3, s.a + 1.5 + i * .3)); if (p <= 0) return;
+      const y = 760 + i * 110; ctx.save(); ctx.globalAlpha = p; ctx.translate((1 - p) * 60, 0);
+      ctx.fillStyle = 'rgba(2,20,40,.6)'; rr(560, y - 42, 440, 84, 42); ctx.fill();
+      ctx.fillStyle = GREEN; ctx.beginPath(); ctx.arc(955, y, 26, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(943, y); ctx.lineTo(952, y + 9); ctx.lineTo(968, y - 9); ctx.stroke();
+      ctx.font = `700 46px ${DISPLAY}`; ctx.direction = 'rtl'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(n, 912, y + 2); ctx.restore();
+    });
+    const pp = eout(seg(t, s.a + 2.4, s.a + 3.0)); if (pp > 0) phone(t, 1700, pp);
+  }
+}
+
+function renderFrame(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  let i = SHOTS.findIndex(s => t >= s.a && t < s.b); if (i < 0) i = SHOTS.length - 1;
+  const s = SHOTS[i]; scene(s, t);
+  // transition: the previous shot dissolves through a rain-blur
+  const u = t - s.a; if (i > 0 && u < .55) { const p = u / .55; ctx.save(); ctx.globalAlpha = 1 - eio(p); ctx.filter = `blur(${(p * 18).toFixed(1)}px)`; scene(SHOTS[i - 1], s.a - .001); ctx.restore(); }
+  rain(t, 1);
+  const lf = lightning(t); if (lf > 0) { ctx.fillStyle = `rgba(215,230,255,${lf * .55})`; ctx.fillRect(0, 0, W, H); }
+  // logo on every shot (top-right corner), except where the big logo is shown
+  if (s.kind !== 'end' && !(s.kind === 'homs' && t > 2.2)) logo(t, W - 120, 120, 120, 1);
+  // vignette + cinematic bars
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * .3, W / 2, H / 2, H * .75); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,4,12,.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, 34); ctx.fillRect(0, H - 34, W, 34);
+  if (t < .4) { ctx.fillStyle = `rgba(0,0,0,${1 - t / .4})`; ctx.fillRect(0, 0, W, H); }
+  if (t > DUR - .6) { ctx.fillStyle = `rgba(0,0,0,${seg(t, DUR - .6, DUR)})`; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+window.ready = (async () => {
+  await document.fonts.load(`700 100px "Readex Pro"`, 'بدأت الشتوية'); await document.fonts.load(`500 50px "IBM Plex Sans Arabic"`, 'حمص'); await document.fonts.load(`700 80px "IBM Plex Sans Arabic"`, '0982');
+  I.logo = await load('assets/logo-vertical.png'); I.beam = await load('assets/litebeam.png');
+  I.clock = await load('assets/homs_clock.png'); I.mosque = await load('assets/homs_mosque.png');
+  I.layers = {};
+  const map = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7 };
+  for (const k in map) { I.layers[k] = { bg: await load(`layers/${k == 3 ? 'scene' : 'bg'}${k}.png`), obj: k == 3 ? null : await load(`layers/obj${k}.png`) }; }
+  return true;
+})();
+window.render = t => renderFrame(t);
+</script>
+</body>
+</html>
