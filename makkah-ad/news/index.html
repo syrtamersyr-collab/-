@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>نشرة مكة الجوية</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// «نشرة مكة الجوية» — comedic TV weather report about internet in Homs. 1080x1920, 35s. render(t) draws a frame.
+const W = 1080, H = 1920, DUR = 35;
+const cv = document.getElementById('c'); const ctx = cv.getContext('2d');
+const EM = '"Noto Color Emoji"', DISPLAY = `"Readex Pro","IBM Plex Sans Arabic",${EM},sans-serif`, BODY = `"IBM Plex Sans Arabic","Readex Pro",${EM},sans-serif`;
+const GREEN = '#5BC72A', NAVY = '#02376C', RED = '#E5484D', GOLD = '#FFC94D';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const eback = p => { const c1 = 1.9, c3 = c1 + 1; return Math.max(0, 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)); };
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function txt(s, x, y, size, col, weight = 700, font = DISPLAY, align = 'center', dir = 'rtl') { ctx.save(); ctx.font = `${weight} ${size}px ${font}`; ctx.direction = dir; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillStyle = col; ctx.fillText(s, x, y); ctx.restore(); }
+function pop(s, x, y, size, t, t0, col = '#fff', o = {}) { const p = eback(seg(t, t0, t0 + .35)); if (p <= 0) return; ctx.save(); ctx.translate(x, y); ctx.scale(p, p); ctx.rotate(o.rot || 0); if (o.box) { ctx.font = `700 ${size}px ${DISPLAY}`; ctx.direction = 'rtl'; const w = ctx.measureText(s).width + size; ctx.fillStyle = o.box; ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 20; rr(-w / 2, -size * .8, w, size * 1.6, size * .35); ctx.fill(); ctx.shadowBlur = 0; } txt(s, 0, 4, size, col); ctx.restore(); }
+const load = s => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = s; });
+let LOGO;
+
+// ---------- studio background ----------
+function studio(t, alarm = 0) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, alarm ? '#3a0b12' : '#04203f'); g.addColorStop(1, alarm ? '#14040a' : '#010b1a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = .08; ctx.strokeStyle = '#8fc7ff'; ctx.lineWidth = 2; for (let x = -200; x < W + 200; x += 90) { ctx.beginPath(); ctx.moveTo(x + (t * 20) % 90, 0); ctx.lineTo(x + (t * 20) % 90 - 300, H); ctx.stroke(); } ctx.restore();
+}
+// channel bug + lower thirds
+function chrome(t) {
+  const w = 120, h = w * LOGO.height / LOGO.width; ctx.save(); ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 16; rr(W - w - 70, 44, w + 32, h + 32, 20); ctx.fill(); ctx.restore(); ctx.drawImage(LOGO, W - w - 54, 60, w, h);
+  if (Math.sin(t * 4) > -.4) { ctx.fillStyle = RED; ctx.beginPath(); ctx.arc(70, 92, 11, 0, 7); ctx.fill(); } txt('مباشر', 140, 94, 34, '#fff', 700, BODY);
+  // breaking ticker
+  const ty = H - 140; ctx.fillStyle = '#fff'; ctx.fillRect(0, ty, W, 92); ctx.fillStyle = RED; ctx.fillRect(W - 200, ty, 200, 92); txt('عاجل', W - 100, ty + 48, 44, '#fff');
+  const items = ['أم محمود خلّصت المسلسل بلا ما يعلّق ولا مرة', 'الراوتر القديم يعلن اعتزاله رسمياً', 'شب بالوعر شاف الستوري قبل ما تختفي', 'مركز مكة يركّب… والتقطيع يهرب من حمص'];
+  const line = items.join('   ◆   ') + '   ◆   ';
+  ctx.save(); ctx.beginPath(); ctx.rect(0, ty, W - 200, 92); ctx.clip(); ctx.font = `700 40px ${BODY}`; ctx.direction = 'rtl'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = NAVY;
+  const lw = ctx.measureText(line).width, x = ((t * 190) % lw); ctx.fillText(line, -lw + x + (W - 200), ty + 48); ctx.fillText(line, x + (W - 200) - 2 * lw, ty + 48); ctx.restore();
+}
+
+// ---------- Homs map ----------
+const MX = 540, MY = 1000;
+const AREAS = [ // name, x, y
+  ['الوعر', 250, 760], ['الخالدية', 700, 720], ['القصور', 560, 930], ['الإنشاءات', 360, 1080], ['الحمرا', 520, 1180], ['باب السباع', 780, 1080],
+];
+function map(t, good, k) {
+  // land
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 40; ctx.fillStyle = good ? '#0d3a2a' : '#1a2a3d';
+  ctx.beginPath(); ctx.moveTo(120, 640); ctx.bezierCurveTo(400, 560, 800, 580, 960, 660); ctx.bezierCurveTo(1010, 900, 990, 1150, 900, 1300); ctx.bezierCurveTo(600, 1380, 300, 1360, 140, 1270); ctx.bezierCurveTo(70, 1050, 80, 820, 120, 640); ctx.closePath(); ctx.fill(); ctx.restore();
+  // green front clips over the land
+  if (k > 0) { ctx.save(); ctx.beginPath(); ctx.arc(560, 930, k * 900, 0, 7); ctx.clip(); ctx.fillStyle = '#0f4a2c'; ctx.beginPath(); ctx.moveTo(120, 640); ctx.bezierCurveTo(400, 560, 800, 580, 960, 660); ctx.bezierCurveTo(1010, 900, 990, 1150, 900, 1300); ctx.bezierCurveTo(600, 1380, 300, 1360, 140, 1270); ctx.bezierCurveTo(70, 1050, 80, 820, 120, 640); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.strokeStyle = GREEN; ctx.lineWidth = 14; ctx.shadowColor = GREEN; ctx.shadowBlur = 30; ctx.globalAlpha = k < 1 ? 1 : 0; ctx.beginPath(); ctx.arc(560, 930, k * 900, 0, 7); ctx.stroke(); ctx.restore(); }
+  // Orontes river
+  ctx.save(); ctx.strokeStyle = '#2f7fd0'; ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(110, 900); ctx.bezierCurveTo(200, 980, 150, 1100, 230, 1290); ctx.stroke(); ctx.restore(); txt('العاصي', 150, 1180, 26, '#8fc7ff', 500, BODY);
+  // streets grid hint
+  ctx.save(); ctx.globalAlpha = .18; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(180 + i * 140, 640); ctx.lineTo(160 + i * 150, 1320); ctx.stroke(); ctx.beginPath(); ctx.moveTo(100, 700 + i * 110); ctx.lineTo(1000, 690 + i * 115); ctx.stroke(); } ctx.restore();
+  for (const [n, x, y] of AREAS) { ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(x, y, 8, 0, 7); ctx.fill(); txt(n, x, y + 40, 32, '#fff', 700, BODY); }
+}
+function icon(e, x, y, size, t, t0, wobble = 0) { const p = eback(seg(t, t0, t0 + .35)); if (p <= 0) return; ctx.save(); ctx.translate(x, y + Math.sin(t * 3 + x) * wobble); ctx.scale(p, p); ctx.font = `${size}px ${EM}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(e, 0, 0); ctx.restore(); }
+function gauge(t, x, y, v, label) {
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 46; const a0 = Math.PI * .85, a1 = Math.PI * 2.15;
+  const segs = [[GREEN, 0, .33], [GOLD, .33, .66], [RED, .66, 1]]; for (const [c, s0, s1] of segs) { ctx.strokeStyle = c; ctx.beginPath(); ctx.arc(x, y, 300, lerp(a0, a1, s0) + .02, lerp(a0, a1, s1) - .02); ctx.stroke(); }
+  const a = lerp(a0, a1, v) + Math.sin(t * 40) * .015 * (v > .9 ? 1 : 0); ctx.strokeStyle = '#fff'; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 250, y + Math.sin(a) * 250); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 26, 0, 7); ctx.fill(); ctx.restore();
+  txt(label, x, y + 150, 54, '#fff');
+}
+
+function renderFrame(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  const alarm = t >= 16 && t < 17.6 && Math.floor(t * 6) % 2 === 0;
+  studio(t, alarm);
+  if (t < 3) {                          // show ident
+    const p = eback(seg(t, .2, .8)); ctx.save(); ctx.translate(W / 2, 760); ctx.scale(p, p); ctx.rotate((1 - p) * .4);
+    ctx.fillStyle = GREEN; rr(-420, -140, 840, 280, 50); ctx.fill(); ctx.fillStyle = NAVY; rr(-400, -120, 800, 240, 40); ctx.fill(); txt('نشرة مكة', 0, -30, 110, '#fff'); txt('الجوية ⛈️', 0, 70, 80, GREEN); ctx.restore();
+    txt('برعاية: التقطيع… بس مو لمدة طويلة 😏', W / 2, 1060, 44, '#cfe2ff', 500, BODY);
+    const w = 260, h = w * LOGO.height / LOGO.width, lp = eout(seg(t, 1, 1.5)); ctx.save(); ctx.globalAlpha = lp; ctx.fillStyle = '#fff'; rr(W / 2 - w / 2 - 24, 1180, w + 48, h + 48, 30); ctx.fill(); ctx.drawImage(LOGO, W / 2 - w / 2, 1204, w, h); ctx.restore();
+  } else if (t < 10) {                  // bad forecast
+    txt('توقعات اليوم بحمص', W / 2, 330, 76, '#fff'); txt('حالة الإنترنت: غائم جزئياً… وكلياً', W / 2, 430, 46, '#cfe2ff', 500, BODY);
+    map(t, false, 0);
+    AREAS.forEach(([n, x, y], i) => { icon(i % 2 ? '🐢' : '⛈️', x, y - 70, 90, t, 4 + i * .35, 6); });
+    pop('منخفض تقطيع فوق القصور', 560, 1480, 50, t, 6.5, '#fff', { box: RED, rot: -.04 });
+    pop('سرعة النت: 3 ميغا… بالساعة 🐌', 540, 1590, 42, t, 8, NAVY, { box: '#fff', rot: .03 });
+  } else if (t < 16) {                  // the buffering index
+    txt('مؤشر التقطيع', W / 2, 330, 90, '#fff');
+    const v = eout(seg(t, 10.3, 12.5)) * .98; gauge(t, W / 2, 900, v, `${Math.round(v * 100)}%`);
+    pop('احتمال تعليق الفيديو: 98%', W / 2, 1300, 52, t, 12.6, '#fff', { box: RED });
+    pop('الكهربا: 6 ساعات… وممكن تزيد 🕯️', W / 2, 1430, 46, t, 13.6, NAVY, { box: '#fff', rot: -.03 });
+    // spinner
+    ctx.save(); ctx.translate(W / 2, 470); ctx.scale(.8, .8); for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283 + Math.floor(t * 12) / 12 * 6.283; ctx.globalAlpha = .15 + .85 * i / 12; ctx.strokeStyle = '#fff'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 30, Math.sin(a) * 30); ctx.lineTo(Math.cos(a) * 56, Math.sin(a) * 56); ctx.stroke(); } ctx.restore();
+  } else if (t < 24) {                  // breaking update: Makkah front sweeps the map
+    if (t < 17.6) { const p = eback(seg(t, 16, 16.4)); ctx.save(); ctx.translate(W / 2, 450); ctx.scale(p, p); ctx.fillStyle = '#fff'; rr(-360, -90, 720, 180, 30); ctx.fill(); txt('🚨 تحديث عاجل!', 0, 6, 80, RED); ctx.restore(); }
+    const k = eio(seg(t, 17.6, 20.2)); map(t, k >= 1, k);
+    if (t >= 17.6) { ctx.fillStyle = 'rgba(1,11,26,.85)'; ctx.fillRect(0, 330, W, 140); txt('جبهة مكة الخضراء وصلت', W / 2, 400, 70, GREEN); }
+    AREAS.forEach(([n, x, y], i) => {
+      const reached = Math.hypot(x - 560, y - 930) < k * 900;
+      if (!reached) icon(i % 2 ? '🐢' : '⛈️', x, y - 70, 90, t, 0, 6);
+      else icon(['🚀', '☀️', '📶', '📹', '🚀', '☀️'][i], x, y - 70, 92, t, 17.6 + Math.hypot(x - 560, y - 930) / 900 * 2.6, 6);
+    });
+    pop('الطاقة الشمسية ☀️ النت ما بيقطع', 540, 1490, 46, t, 21, '#fff', { box: GREEN });
+    pop('كاميرات المراقبة 📹 ساهرة على الحارة', 540, 1600, 42, t, 22.2, NAVY, { box: '#fff', rot: .03 });
+  } else if (t < 30) {                  // week forecast
+    txt('توقعات الأسبوع مع مركز مكة', W / 2, 360, 64, '#fff');
+    const days = ['السبت', 'الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+    days.forEach((d, i) => { const p = eback(seg(t, 24.3 + i * .3, 24.7 + i * .3)); if (p <= 0) return; const col = i % 2, row = Math.floor(i / 2), x = col ? 300 : 780, y = 620 + row * 330;
+      ctx.save(); ctx.translate(x, y); ctx.scale(p, p); ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.strokeStyle = 'rgba(91,199,42,.6)'; ctx.lineWidth = 3; rr(-210, -140, 420, 280, 30); ctx.fill(); ctx.stroke();
+      txt(d, 0, -90, 46, '#fff'); ctx.fillStyle = '#fff'; ctx.font = `90px ${EM}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(d === 'الأربعاء' ? '😄' : '☀️', 0, 5); txt('0%  تقطيع', 0, 100, 38, GREEN, 700, BODY, 'center', 'ltr'); ctx.restore(); });
+    pop('حتى يوم الأربعاء… النت شغّال 😄', W / 2, 1620, 44, t, 27.6, NAVY, { box: GOLD, rot: -.03 });
+  } else {                              // call to action
+    txt('لا تنطر النشرة الجاية…', W / 2, 360, 66, '#fff');
+    pop('احجز هلق!', W / 2, 500, 110, t, 30.4, '#fff', { box: GREEN, rot: -.04 });
+    const w = 300, h = w * LOGO.height / LOGO.width, lp = eback(seg(t, 31, 31.5)); ctx.save(); ctx.translate(W / 2, 920); ctx.scale(lp, lp); ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 30; rr(-w / 2 - 30, -h / 2 - 30, w + 60, h + 60, 36); ctx.fill(); ctx.shadowBlur = 0; ctx.drawImage(LOGO, -w / 2, -h / 2, w, h); ctx.restore();
+    const pp = eback(seg(t, 31.8, 32.3)); if (pp > 0) { ctx.save(); ctx.translate(W / 2, 1390); ctx.scale(pp, pp); ctx.fillStyle = GREEN; ctx.shadowColor = 'rgba(91,199,42,.6)'; ctx.shadowBlur = 40; rr(-380, -66, 760, 132, 66); ctx.fill(); ctx.shadowBlur = 0; txt('0982 621 531', 0, 4, 80, '#fff', 700, BODY, 'center', 'ltr'); ctx.restore(); }
+    const ap = eout(seg(t, 32.5, 33)); ctx.save(); ctx.globalAlpha = ap; txt('📍 حمص – القصور – خلف جامع حمود الناصر', W / 2, 1520, 42, '#fff', 500, BODY); ctx.restore();
+  }
+  chrome(t);
+  // scene change whoosh-flash
+  for (const c of [3, 10, 16, 24, 30]) { const d = 1 - Math.abs(t - c) / .15; if (d > 0) { ctx.fillStyle = `rgba(255,255,255,${d * .7})`; ctx.fillRect(0, 0, W, H); } }
+  if (t < .3) { ctx.fillStyle = `rgba(0,0,0,${1 - t / .3})`; ctx.fillRect(0, 0, W, H); }
+  if (t > DUR - .5) { ctx.fillStyle = `rgba(0,0,0,${seg(t, DUR - .5, DUR) * .7})`; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+window.ready = (async () => {
+  for (const f of ['700 100px "Readex Pro"', '500 40px "IBM Plex Sans Arabic"', '700 40px "IBM Plex Sans Arabic"', '90px "Noto Color Emoji"']) await document.fonts.load(f, 'نشرة 0982 🐢⛈️🚀☀️📶📹😄🕯️🐌🚨😏');
+  LOGO = await load('assets/logo-vertical.png'); return true;
+})();
+window.render = t => renderFrame(t);
+</script>
+</body>
+</html>
