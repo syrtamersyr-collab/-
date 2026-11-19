@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>الشتوية على الأبواب — مركز مكة</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// Winter campaign reel built from the Canva cards. render(t) draws the video frame; card(i) draws a clean still card.
+const W = 1080, H = 1920, DUR = 35;
+const cv = document.getElementById('c'); const ctx = cv.getContext('2d');
+const DISPLAY = '"Readex Pro","IBM Plex Sans Arabic",sans-serif', BODY = '"IBM Plex Sans Arabic","Readex Pro",sans-serif';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const eback = p => { const c1 = 1.7, c3 = c1 + 1; return Math.max(0, 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2)); };
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+const load = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = src; });
+let CARDS = [], LOGO, BEAM;
+
+// ---------- card fixes, baked once into clean card canvases ----------
+function fixCard2(c) {
+  // cover the glitched headline with the card's own background (feathered so no seam shows), then set the text again cleanly
+  const g = c.getContext('2d'), y0 = 245, y1 = 900, F = 22;
+  const patch = document.createElement('canvas'); patch.width = W; patch.height = y1 - y0; const pg = patch.getContext('2d');
+  const L = g.getImageData(14, y0, 1, y1 - y0).data, R = g.getImageData(1064, y0, 1, y1 - y0).data;
+  for (let y = 0; y < y1 - y0; y++) { const gr = pg.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, `rgb(${L[y * 4]},${L[y * 4 + 1]},${L[y * 4 + 2]})`); gr.addColorStop(1, `rgb(${R[y * 4]},${R[y * 4 + 1]},${R[y * 4 + 2]})`); pg.fillStyle = gr; pg.fillRect(0, y, W, 1); }
+  pg.globalCompositeOperation = 'destination-in';
+  const m = pg.createLinearGradient(0, 0, 0, y1 - y0); m.addColorStop(0, 'rgba(0,0,0,0)'); m.addColorStop(F / (y1 - y0), 'rgba(0,0,0,1)'); m.addColorStop(1 - F / (y1 - y0), 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)');
+  pg.fillStyle = m; pg.fillRect(0, 0, W, y1 - y0);
+  g.drawImage(patch, 0, y0); g.drawImage(patch, 0, y0);
+  g.font = `700 112px ${DISPLAY}`; g.direction = 'rtl'; g.textAlign = 'right'; g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 18;
+  const line = (parts, y) => { let x = 940; for (const [txt, col] of parts) { g.fillStyle = col; g.fillText(txt, x, y); x -= g.measureText(txt).width; } };
+  line([['منشن صاحبك', '#ffffff']], 400); line([['اللي ', '#ffffff'], ['بيقعد', '#5BC72A']], 530);
+  line([['جنب ', '#ffffff'], ['الصوبيا…', '#5BC72A']], 660); line([['والموبايل بإيده', '#ffffff']], 790);
+  g.shadowColor = 'transparent';
+}
+function fixCard4(c) {
+  const g = c.getContext('2d'); const w = 470, h = w * BEAM.height / BEAM.width, x = 40, y = 1290;
+  const glow = g.createRadialGradient(x + w / 2, y + h / 2, 40, x + w / 2, y + h / 2, w * .75); glow.addColorStop(0, 'rgba(120,230,70,.22)'); glow.addColorStop(1, 'rgba(120,230,70,0)'); g.fillStyle = glow; g.fillRect(x - 200, y - 200, w + 400, h + 400);
+  g.save(); g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = 40; g.shadowOffsetY = 20; g.drawImage(BEAM, x, y, w, h); g.restore();
+}
+function logoBadge(g, s = 1, x = 44, y = 44) {
+  const w = 190 * s, h = w * LOGO.height / LOGO.width, p = 18 * s;
+  g.save(); g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 24 * s; g.fillStyle = '#ffffff'; rr(g, x, y, w + 2 * p, h + 2 * p, 26 * s); g.fill(); g.restore();
+  g.drawImage(LOGO, x + p, y + p, w, h);
+}
+const LOGO_AT = { 7: [904, 196] };
+function buildCards(imgs) {
+  return imgs.map((im, i) => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.drawImage(im, 0, 0, W, H); if (i === 1) fixCard2(c); if (i === 3) fixCard4(c); const [lx, ly] = LOGO_AT[i] || [24, 24]; logoBadge(g, .6, lx, ly); return c; });
+}
+
+// ---------- video ----------
+const SHOTS = [[0, 3.2], [3.2, 6.8], [6.8, 10.8], [10.8, 14.8], [14.8, 18.8], [18.8, 22.8], [22.8, 26.8], [26.8, 35]];
+const RAIN = (() => { const r = rng(9), a = []; for (let i = 0; i < 260; i++) a.push([r() * W, r() * H, 18 + r() * 40, 900 + r() * 900, .15 + r() * .35]); return a; })();
+function rain(t, k = 1) { ctx.save(); ctx.strokeStyle = '#cfe6ff'; ctx.lineCap = 'round'; for (const [x0, y0, l, v, a] of RAIN) { const y = (y0 + t * v) % (H + 80) - 40, x = (x0 - t * v * .12 + W * 4) % W; ctx.globalAlpha = a * k; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - l * .12, y + l); ctx.stroke(); } ctx.restore(); }
+function drawShot(i, t) {
+  const [a, b] = SHOTS[i], u = t - a, d = b - a;
+  const z = lerp(1.0, 1.07, eio(seg(u, 0, d))), dx = (i % 2 ? -1 : 1) * 14 * seg(u, 0, d);
+  ctx.save(); ctx.translate(W / 2 + dx, H / 2); ctx.scale(z, z); ctx.drawImage(CARDS[i], -W / 2, -H / 2); ctx.restore();
+}
+function render(t) {
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  let i = SHOTS.findIndex(([a, b]) => t >= a && t < b); if (i < 0) i = SHOTS.length - 1;
+  const [a] = SHOTS[i], u = t - a, T = .45;
+  drawShot(i, t);
+  if (i > 0 && u < T) {        // the new card wipes in from the right over the previous one, like a misted window
+    const p = eio(u / T); ctx.save(); ctx.beginPath(); ctx.rect(W * (1 - p), 0, W, H); ctx.clip(); ctx.globalAlpha = 1; ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W * (1 - p), H); ctx.clip(); drawShot(i - 1, a - .001); ctx.restore();
+    ctx.save(); ctx.fillStyle = 'rgba(80,190,30,.9)'; ctx.fillRect(W * (1 - p) - 10, 0, 20, H); ctx.restore();
+  }
+  // weather
+  rain(t, i === 0 ? 1 : .55);
+  if (t < 1.4) { const f = Math.max(0, 1 - Math.abs(t - .55) / .12) + Math.max(0, 1 - Math.abs(t - .78) / .08) * .6; if (f > 0) { ctx.fillStyle = `rgba(220,235,255,${f * .55})`; ctx.fillRect(0, 0, W, H); } }
+  // final call-to-action pulse on the phone pill
+  if (i === 7) { const q = (t * 1.2) % 1; ctx.save(); ctx.strokeStyle = `rgba(120,230,70,${(1 - q) * .8})`; ctx.lineWidth = 8; rr(ctx, 112 - q * 30, 1690 - q * 30, 855 + q * 60, 208 + q * 60, 104 + q * 30); ctx.stroke(); ctx.restore(); }
+  // fade in/out
+  if (t < .25) { ctx.fillStyle = `rgba(0,0,0,${1 - t / .25})`; ctx.fillRect(0, 0, W, H); }
+  if (t > DUR - .5) { ctx.fillStyle = `rgba(0,0,0,${seg(t, DUR - .5, DUR) * .6})`; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+function card(i) { ctx.clearRect(0, 0, W, H); ctx.drawImage(CARDS[i], 0, 0); }
+window.ready = (async () => {
+  await document.fonts.load(`700 112px "Readex Pro"`, 'منشن صاحبك');
+  LOGO = await load('assets/logo-vertical.png'); BEAM = await load('assets/litebeam.png');
+  CARDS = buildCards(await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map(k => load(`cards/card${k}.png`))));
+  return true;
+})();
+window.render = t => t < 0 ? card(-t - 1) : render(t);
+</script>
+</body>
+</html>
