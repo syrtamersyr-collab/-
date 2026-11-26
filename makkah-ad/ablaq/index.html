@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>الأبلق — مركز مكة</title>
+<link rel="stylesheet" href="fonts/fonts.css">
+<style>
+  html,body{margin:0;background:#000}
+  #wrap{position:relative;width:1080px;height:1920px;overflow:hidden}
+  #wrap canvas{position:absolute;left:0;top:0;width:1080px;height:1920px;display:block}
+</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="wrap"><canvas id="gl" width="1080" height="1920"></canvas><canvas id="ui" width="1080" height="1920"></canvas></div>
+<script type="module">
+// «الأبلق — نورٌ من حجر حمص»: black basalt & white limestone with living gold veins. 1080x1920, 36.67s (72 BPM, 11 bars).
+// Every frame is a pure function of t: window.render(t).
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const W = 1080, H = 1920, DUR = 36.67;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eio = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eout = p => 1 - Math.pow(1 - p, 3);
+const smooth = p => p * p * (3 - 2 * p);
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+// ---------- renderer ----------
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('gl'), antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, H, false);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .9;
+renderer.localClippingEnabled = true;
+const pmrem = new THREE.PMREMGenerator(renderer);
+const ENV = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+function canvasTex(w, h, draw, srgb = true) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; }
+
+// ---------- stone textures ----------
+function stoneTex(seed, base, spread, pores) {
+  return canvasTex(512, 512, (g, w, h) => {
+    const r = rng(seed); g.fillStyle = base; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2600; i++) { const x = r() * w, y = r() * h, s = r() * 26 + 4, v = (r() - .5) * spread; g.fillStyle = `rgba(${v > 0 ? 255 : 0},${v > 0 ? 245 : 0},${v > 0 ? 230 : 0},${Math.abs(v) * .07})`; g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); }
+    for (let i = 0; i < pores; i++) { const x = r() * w, y = r() * h, s = r() * 2.6 + .6; g.fillStyle = 'rgba(0,0,0,.55)'; g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.05)'; g.beginPath(); g.arc(x + .8, y + .8, s * .7, 0, 7); g.fill(); }
+  });
+}
+const BASALT = stoneTex(3, '#1c1b1a', 1.4, 1400), LIME = stoneTex(5, '#d6c9b0', 1.0, 160), WHITE = stoneTex(9, '#ddd6c8', .6, 60);
+// gold crack networks (drawn left -> right so a "spark" can travel along uv.x)
+function veinTex(seed) {
+  return canvasTex(512, 512, (g, w, h) => {
+    const r = rng(seed); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); g.lineCap = 'round'; g.lineJoin = 'round';
+    const crack = (x, y, ang, len, wd) => { g.lineWidth = wd; g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < len; k++) { ang += (r() - .5) * .9; x += Math.cos(ang) * 9; y += Math.sin(ang) * 9; g.lineTo(x, y); if (wd > 1.6 && r() < .06) { g.stroke(); crack(x, y, ang + (r() - .5) * 2, len * .4, wd * .55); g.beginPath(); g.moveTo(x, y); g.lineWidth = wd; } } g.stroke(); };
+    for (let i = 0; i < 3; i++) crack(-10, 60 + r() * 390, (r() - .5) * .6, 70, 4.2 + r() * 2);
+  }, true);
+}
+const VEINS = [veinTex(11), veinTex(23), veinTex(37), veinTex(41)];
+function glowSprite() { return canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,240,200,1)'); gr.addColorStop(.25, 'rgba(255,200,110,.6)'); gr.addColorStop(1, 'rgba(255,170,60,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }); }
+const GLOW = glowSprite();
+
+// material with a travelling gold spark through its emissive veins (axis 'x' or 'y' of the uv)
+function veinMat(base, emTex, axis = 'x') {
+  const m = base.clone(); m.emissiveMap = emTex; m.emissive = new THREE.Color(0xffa733); m.emissiveIntensity = 0;
+  m.userData.u = { uReveal: { value: 0 } };
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uReveal = m.userData.u.uReveal;
+    sh.fragmentShader = 'uniform float uReveal;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      { float ex = ${axis === 'x' ? 'vEmissiveMapUv.x' : '1.0 - vEmissiveMapUv.y'}; float lit = 1.0 - smoothstep(uReveal - 0.07, uReveal, ex); float edge = exp(-abs(ex - uReveal) * 38.0); totalEmissiveRadiance *= (lit + edge * 3.0); }`);
+  };
+  m.customProgramCacheKey = () => 'vein' + axis;
+  return m;
+}
+const basaltBase = new THREE.MeshStandardMaterial({ map: BASALT, bumpMap: BASALT, bumpScale: 2.2, roughness: .78, metalness: .05, envMapIntensity: .6 });
+const limeBase = new THREE.MeshStandardMaterial({ map: LIME, bumpMap: LIME, bumpScale: 1.2, roughness: .66, metalness: 0, envMapIntensity: .5 });
+
+// =====================================================================
+const scene = new THREE.Scene();
+scene.background = canvasTex(16, 512, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#050506'); gr.addColorStop(.55, '#0d0a08'); gr.addColorStop(1, '#030303'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+scene.fog = new THREE.FogExp2(0x0b0907, 0.032);
+scene.environment = ENV; scene.environmentIntensity = .35;
+const cam = new THREE.PerspectiveCamera(40, W / H, 0.05, 200);
+scene.add(new THREE.HemisphereLight(0x8a7a66, 0x050505, .25));
+const key = new THREE.SpotLight(0xffd9a3, 230, 80, .62, .85, 1.6); key.position.set(5, 16, 10); key.castShadow = true; key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0004; key.shadow.normalBias = .03;
+const keyT = new THREE.Object3D(); scene.add(keyT); key.target = keyT; scene.add(key);
+const rim = new THREE.DirectionalLight(0x86a8ff, 1.3); rim.position.set(-7, 5, -9); scene.add(rim);
+const fill = new THREE.PointLight(0xffb36b, 8, 30, 1.8); scene.add(fill);
+// distant amber haze
+const haze = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0x7a4a1a, transparent: true, opacity: .35, depthWrite: false, fog: false, blending: THREE.AdditiveBlending })); haze.scale.set(70, 70, 1); haze.position.set(0, 4, -40); scene.add(haze);
+
+// ---------- the stones ----------
+const N = 120, BLK = new RoundedBoxGeometry(1, .5, .5, 3, .045);
+const R = rng(7), blocks = [];
+for (let i = 0; i < N; i++) {
+  const type = i % 2;  // 0 basalt, 1 limestone
+  const mat = veinMat(type ? limeBase : basaltBase, VEINS[i % 4]);
+  const m = new THREE.Mesh(BLK, mat); m.castShadow = m.receiveShadow = true; scene.add(m);
+  blocks.push({ m, type, r1: R(), r2: R(), r3: R(), axis: V(R() - .5, R() - .5, R() - .5).normalize() });
+}
+blocks[0].type = 0;
+const Q = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z));
+const ONE = V(1, 1, 1), ZERO = V(.001, .001, .001);
+
+// formations: (i, t) => {p, q, s}
+const scatterP = blocks.map((b, i) => { if (i === 0) return V(0, 0, 0); let p; do { p = V((R() - .5) * 16, R() * 10 - 2.5, -R() * 12 + 2.5); } while (p.z > -1.5 && Math.abs(p.x) < 2.5 && Math.abs(p.y) < 2.2); return p; });
+const scatterQ = blocks.map((b, i) => i === 0 ? Q(.12, -.5, .06) : Q(R() * 6, R() * 6, R() * 6));
+function fScatter(i, t) { const b = blocks[i]; if (i === 0) return { p: V(0, Math.sin(t * .6) * .02, 0), q: scatterQ[0].clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), t * .05)), s: ONE }; return { p: scatterP[i].clone().add(V(0, Math.sin(t * .5 + i) * .25, 0)), q: scatterQ[i].clone().multiply(new THREE.Quaternion().setFromAxisAngle(b.axis, t * (.08 + b.r1 * .15))), s: ONE }; }
+// park (unused stones drift in the dark far behind)
+function fPark(i, t) { const b = blocks[i], a = b.r1 * 6.28 + t * .03 * (b.r2 > .5 ? 1 : -1), rr = 13 + b.r2 * 9; return { p: V(Math.cos(a) * rr, -3 + b.r3 * 14, -16 - Math.sin(a) * 6 - b.r3 * 6), q: Q(b.r1 * 6 + t * .1, b.r2 * 6, b.r3 * 6 + t * .07), s: ONE }; }
+// slot assignment helper: fills slots with stones of matching type, rest parked
+function assign(slots, prefer0) {
+  const map = new Array(N).fill(null), used = new Set(); if (prefer0 !== undefined) { map[0] = slots[prefer0]; used.add(prefer0); }
+  for (let i = 0; i < N; i++) { if (map[i]) continue; const k = slots.findIndex((s, j) => !used.has(j) && (s.type === undefined || s.type === blocks[i].type)); if (k >= 0) { map[i] = slots[k]; used.add(k); } }
+  return map;
+}
+// 1) ablaq wall with an arch
+const wallSlots = [];
+for (let c = 0; c < 16; c++) for (let k = 0; k < 8; k++) {
+  const x = (k - 3.5) * 1.03 + (c % 2 ? .5 : 0) - .25, y = 1.1 + c * .52;
+  const inArch = Math.abs(x) < 1.3 && (y < 4.6 || (y - 4.6) ** 2 + x * x < 1.3 * 1.3);
+  if (!inArch && Math.abs(x) < 3.8) wallSlots.push({ p: V(x, y, 0), q: Q(0, 0, 0), s: ONE, type: c % 2 });
+}
+const wallMap = assign(wallSlots, wallSlots.findIndex(s => s.type === 0 && s.p.y < 2 && Math.abs(s.p.x - 2.5) < .6));
+const fWall = (i, t) => wallMap[i] || fPark(i, t);
+// 2) tower swarm: stones dive into the tower volume and vanish (the tower builds itself)
+const fTower = (i, t) => { const b = blocks[i]; return { p: V((b.r1 - .5) * 1.2, .5 + b.r2 * 9, (b.r3 - .5) * 1.2), q: Q(b.r1 * 3, b.r2 * 3, 0), s: ZERO }; };
+// 3) wifi arcs (centre 0,4)
+const wifiSlots = [{ p: V(0, 2.2, 0), q: Q(0, 0, 0), s: V(.55, 1.1, 1) }];
+for (const [r, n] of [[1.35, 4], [2.35, 7], [3.35, 10]]) for (let k = 0; k < n; k++) { const a = lerp(.72, Math.PI - .72, n === 1 ? .5 : k / (n - 1)); wifiSlots.push({ p: V(Math.cos(a) * r, 2.2 + Math.sin(a) * r, 0), q: Q(0, 0, a - Math.PI / 2), s: V(.6, 1, 1) }); }
+const wifiMap = assign(wifiSlots); const fWifi = (i, t) => wifiMap[i] || fPark(i, t);
+// 4) solar panel: basalt tiles (5x4) tilted to the sky
+const solarSlots = [], tilt = Q(-1.05, 0, 0);
+for (let r = 0; r < 4; r++) for (let k = 0; k < 5; k++) { const lp = V((k - 2) * 1.17, 0, (r - 1.5) * 1.62).applyQuaternion(tilt).add(V(0, 3.6, 0)); solarSlots.push({ p: lp, q: tilt.clone(), s: V(1.12, .28, 3.1), type: 0 }); }
+const solarMap = assign(solarSlots); const fSolar = (i, t) => solarMap[i] || fPark(i, t);
+// 5) camera lens: two rings
+const lensSlots = [];
+for (const [r, n, sc] of [[2.45, 15, 1], [1.55, 10, .85]]) for (let k = 0; k < n; k++) { const a = k / n * Math.PI * 2; lensSlots.push({ p: V(Math.cos(a) * r, 4 + Math.sin(a) * r, 0), q: Q(0, 0, a + Math.PI / 2), s: V(sc, 1, 1) }); }
+const lensMap = assign(lensSlots); const fLens = (i, t) => lensMap[i] || fPark(i, t);
+// 6) monolith wall behind the engraved logo
+const monoSlots = [];
+for (let c = 0; c < 13; c++) for (let k = 0; k < 7; k++) monoSlots.push({ p: V((k - 3) * 1.02 + (c % 2 ? .25 : -.25), 2.3 + c * .51, -.7), q: Q(0, 0, 0), s: ONE, type: c % 2 });
+const monoMap = assign(monoSlots); const fMono = (i, t) => monoMap[i] || fPark(i, t);
+
+const TRANS = [ // [from, to, t0, t1]
+  [fScatter, fWall, 7.6, 11.6], [fWall, fTower, 13.6, 16.4], [fTower, fWifi, 18.9, 20.2], [fWifi, fSolar, 22.3, 23.5], [fSolar, fLens, 25.6, 26.8], [fLens, fMono, 29.8, 31.8]];
+const _q = new THREE.Quaternion();
+function blockAt(i, t) {
+  let cur = fScatter;
+  for (const [a, b, t0, t1] of TRANS) {
+    if (t < t0) break;
+    const d = blocks[i].r1 * (t1 - t0) * .45, p = eio(seg(t, t0 + d, t0 + d + (t1 - t0) * .55));
+    if (p >= 1) { cur = b; continue; }
+    const A = a(i, t), B = b(i, t);
+    const pos = A.p.clone().lerp(B.p, p).add(V(0, .9, 1.6).multiplyScalar(Math.sin(p * Math.PI) * (.4 + blocks[i].r2)));
+    const q = A.q.clone().slerp(B.q, p).multiply(_q.setFromAxisAngle(blocks[i].axis, Math.sin(p * Math.PI) * 1.4));
+    return { p: pos, q, s: A.s.clone().lerp(B.s, p), moving: Math.sin(p * Math.PI) };
+  }
+  const F = cur(i, t); return { p: F.p, q: F.q, s: F.s, moving: 0 };
+}
+// vein reveal per stone
+function veinAt(i, t, st) {
+  const b = blocks[i];
+  if (t < 7.6) return i === 0 ? [seg(t, 1.0, 4.6) * 1.15, 2.4] : [seg(t, 4.5 + b.r1 * 2, 6.5 + b.r1 * 2) * 1.15, .9];
+  if (t < 13.6) { const x = st.p.x; return [seg(t, 11.2 + (x + 4) * .18, 12.4 + (x + 4) * .18) * 1.15, 1.6]; }
+  if (t < 18.9) return [1.15, 1.2];
+  if (t < 29.8) { const tb = t < 22.3 ? 19.7 : t < 25.6 ? 22.9 : 26.2; return [seg(t, tb + b.r2 * .5, tb + 1 + b.r2 * .5) * 1.15, 2.2]; }
+  return [1.15, lerp(2.0, .55, seg(t, 31, 32.5))];
+}
+
+// ---------- the New Clock tower (white limestone, black inlays, clock faces) ----------
+const clip = new THREE.Plane(V(0, -1, 0), 0);
+const twMat = new THREE.MeshStandardMaterial({ map: WHITE, bumpMap: WHITE, bumpScale: .8, roughness: .55, clippingPlanes: [clip], envMapIntensity: .6 });
+const blkMat = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: .28, metalness: .1, clippingPlanes: [clip], envMapIntensity: 1.2 });
+const goldMat = new THREE.MeshStandardMaterial({ color: 0xd6a248, roughness: .25, metalness: 1, emissive: 0x6a3d00, emissiveIntensity: .6, clippingPlanes: [clip] });
+const dialMat = new THREE.MeshStandardMaterial({ color: 0xf4efe4, roughness: .4, emissive: 0xffe2a8, emissiveIntensity: .1, clippingPlanes: [clip] });
+const tower = new THREE.Group(); scene.add(tower);
+const box = (w, h, d, mat, x, y, z, parent = tower) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; parent.add(m); return m; };
+box(4.6, .3, 4.6, twMat, 0, .15, 0); box(3.9, .3, 3.9, twMat, 0, .45, 0);
+box(2.6, 2.3, 2.6, twMat, 0, 1.75, 0);
+function archShape(w, h) { const s = new THREE.Shape(); s.moveTo(-w / 2, 0); s.lineTo(-w / 2, h - w / 2); s.absarc(0, h - w / 2, w / 2, Math.PI, 0, true); s.lineTo(w / 2, 0); s.lineTo(-w / 2, 0); return s; }
+const hands = [];
+for (let f = 0; f < 4; f++) {
+  const a = f * Math.PI / 2, g = new THREE.Group(); g.rotation.y = a; tower.add(g);
+  const outer = new THREE.Mesh(new THREE.ShapeGeometry(archShape(1.9, 2.05)), blkMat); outer.position.set(0, .62, 1.305); g.add(outer);
+  const inner = new THREE.Mesh(new THREE.ShapeGeometry(archShape(1.2, 1.7)), twMat); inner.position.set(0, .62, 1.31); g.add(inner);
+  const door = new THREE.Mesh(new THREE.ShapeGeometry(archShape(1.0, 1.55)), blkMat); door.position.set(0, .62, 1.315); g.add(door);
+  // shaft strips + medallion
+  box(.2, 5.3, .05, blkMat, -.3, 5.85, .68, g); box(.2, 5.3, .05, blkMat, .3, 5.85, .68, g);
+  const med = new THREE.Mesh(new THREE.CircleGeometry(.17, 32), blkMat); med.position.set(0, 3.55, .685); g.add(med);
+  // clock face
+  const pan = new THREE.Mesh(new THREE.PlaneGeometry(1.62, 1.62), blkMat); pan.position.set(0, 10.25, .985); g.add(pan);
+  const dial = new THREE.Mesh(new THREE.CircleGeometry(.62, 48), dialMat); dial.position.set(0, 10.25, .99); g.add(dial);
+  const rimR = new THREE.Mesh(new THREE.RingGeometry(.62, .7, 48), goldMat); rimR.position.set(0, 10.25, .992); g.add(rimR);
+  for (let k = 0; k < 12; k++) { const tk = new THREE.Mesh(new THREE.PlaneGeometry(.035, k % 3 ? .07 : .13), blkMat); const aa = k / 12 * Math.PI * 2; tk.position.set(Math.sin(aa) * .52, 10.25 + Math.cos(aa) * .52, .994); tk.rotation.z = -aa; g.add(tk); }
+  const hm = new THREE.Mesh(new THREE.PlaneGeometry(.05, .4), goldMat); hm.geometry.translate(0, .18, 0); hm.position.set(0, 10.25, .996); g.add(hm);
+  const hh = new THREE.Mesh(new THREE.PlaneGeometry(.07, .28), goldMat); hh.geometry.translate(0, .12, 0); hh.position.set(0, 10.25, .997); g.add(hh);
+  hands.push([hm, hh]);
+}
+box(1.3, 6.1, 1.3, twMat, 0, 5.95, 0);                 // shaft
+box(1.75, .28, 1.75, twMat, 0, 9.1, 0);                // capital
+box(1.95, 1.9, 1.95, twMat, 0, 10.2, 0);               // clock cube
+box(2.15, .16, 2.15, twMat, 0, 11.23, 0); box(1.7, .22, 1.7, twMat, 0, 11.42, 0);
+const capG = new THREE.ConeGeometry(.95, .55, 4); capG.rotateY(Math.PI / 4); const cap = new THREE.Mesh(capG, twMat); cap.position.y = 11.8; cap.castShadow = true; tower.add(cap);
+const TS = .82; tower.scale.setScalar(TS); tower.position.set(0, -.6, 0);
+const TH = 12.1 * TS;
+// building seam light
+const seam = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshBasicMaterial({ map: GLOW, color: 0xffb050, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })); seam.rotation.x = -Math.PI / 2; scene.add(seam);
+// signal rings from the clock
+const rings = [0, 1, 2].map(() => { const m = new THREE.Mesh(new THREE.TorusGeometry(1, .03, 8, 96), new THREE.MeshBasicMaterial({ color: 0xffc46b, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })); m.rotation.x = Math.PI / 2; scene.add(m); return m; });
+// lens core
+const core = new THREE.Mesh(new THREE.SphereGeometry(1.05, 64, 32), new THREE.MeshPhysicalMaterial({ color: 0x111111, roughness: .05, metalness: .2, clearcoat: 1, emissive: 0xffa733, emissiveIntensity: 0, envMapIntensity: 1.6 }));
+core.position.set(0, 4, .1); scene.add(core);
+const coreGlint = new THREE.Mesh(new THREE.RingGeometry(.35, .52, 64), new THREE.MeshBasicMaterial({ color: 0xffd38a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); coreGlint.position.set(0, 4, 1.16); scene.add(coreGlint);
+
+// ---------- engraved logo plate ----------
+let plate, plateMat;
+function buildPlate(img) {
+  const PW = 2.2, PH = PW * img.height / img.width * 1.08;
+  const mask = canvasTex(1024, Math.round(1024 * PH / PW), (g, w, h) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h); const lw = w * .78, lh = lw * img.height / img.width;
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.drawImage(img, (w - lw) / 2, (h - lh) / 2, lw, lh); x.globalCompositeOperation = 'source-in'; x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+    g.drawImage(c, 0, 0);
+  });
+  const face = canvasTex(1024, Math.round(1024 * PH / PW), (g, w, h) => {
+    g.drawImage(BASALT.image, 0, 0, w, h); g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(0, 0, w, h);
+    const lw = w * .78, lh = lw * img.height / img.width; const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
+    x.drawImage(img, (w - lw) / 2, (h - lh) / 2, lw, lh); x.globalCompositeOperation = 'source-in'; const gr = x.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#f6dc96'); gr.addColorStop(.5, '#c48a35'); gr.addColorStop(1, '#f1cf7d'); x.fillStyle = gr; x.fillRect(0, 0, w, h);
+    g.drawImage(c, 0, 0); g.strokeStyle = '#c99a4c'; g.lineWidth = 10; g.strokeRect(26, 26, w - 52, h - 52); g.lineWidth = 3; g.strokeRect(44, 44, w - 88, h - 88);
+  });
+  plateMat = veinMat(new THREE.MeshStandardMaterial({ map: face, roughness: .35, metalness: .25, envMapIntensity: 1.1 }), mask, 'y');
+  plateMat.emissive = new THREE.Color(0xffb54a);
+  const side = new THREE.MeshStandardMaterial({ map: BASALT, roughness: .5, color: 0x777777 });
+  plate = new THREE.Mesh(new THREE.BoxGeometry(PW, PH, .22), [side, side, side, side, plateMat, side]); plate.castShadow = true; plate.receiveShadow = true; scene.add(plate);
+  plate.userData.PH = PH;
+}
+
+// ---------- gold dust ----------
+const DUST = 700, dg = new THREE.BufferGeometry(), dpos = new Float32Array(DUST * 3), dseed = [];
+const RD = rng(99); for (let i = 0; i < DUST; i++) dseed.push([(RD() - .5) * 24, RD() * 16 - 3, (RD() - .5) * 26 - 3, RD(), RD()]);
+dg.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
+const dust = new THREE.Points(dg, new THREE.PointsMaterial({ map: GLOW, size: .09, color: 0xffcf8a, transparent: true, opacity: .85, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(dust);
+
+// ---------- camera path ----------
+const CAM = [
+  [0, [.42, .3, 1.75], [0, .02, 0]], [6.2, [.95, .55, 3.2], [0, .1, 0]],
+  [11.4, [0, 4.0, 18.6], [0, 4.0, 0]], [13.4, [1.4, 4.2, 18.2], [0, 4.0, 0]],
+  [17.6, [-6.2, 5.2, 20.5], [0, 4.0, 0]], [18.9, [-4.4, 5.0, 20.0], [0, 4.0, 0]],
+  [20.3, [.9, 4.4, 12.2], [0, 4.1, 0]], [22.3, [-.8, 4.2, 11.6], [0, 4.1, 0]],
+  [23.5, [0, 10.6, 9.8], [0, 3.3, 0]], [25.6, [1.3, 10.2, 9.2], [0, 3.3, 0]],
+  [26.8, [0, 4.0, 11.8], [0, 4.2, 0]], [29.8, [0, 4.0, 10.6], [0, 4.2, 0]],
+  [31.8, [0, 4.4, 14.5], [0, 4.4, 0]], [36.7, [0, 4.4, 12.2], [0, 4.4, 0]]];
+function camAt(t) {
+  let i = 1; while (i < CAM.length - 1 && t > CAM[i][0]) i++;
+  const a = CAM[i - 1], b = CAM[i], p = eio(seg(t, a[0], b[0]));
+  const pos = V(...a[1]).lerp(V(...b[1]), p), tg = V(...a[2]).lerp(V(...b[2]), p);
+  pos.x += Math.sin(t * .4) * .06; pos.y += Math.sin(t * .31) * .05;   // breathing handheld
+  return [pos, tg];
+}
+
+// ---------- post ----------
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, cam));
+const bloom = new UnrealBloomPass(new THREE.Vector2(W / 2, H / 2), .75, .6, .9); composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ---------- 2D overlay ----------
+const ui = document.getElementById('ui').getContext('2d');
+const RUQ = '"Aref Ruqaa", "Amiri", serif', AMI = '"Amiri", serif';
+let LOGO;
+function goldFill(g, y, size) { const gr = g.createLinearGradient(0, y - size * .6, 0, y + size * .6); gr.addColorStop(0, '#fff1c4'); gr.addColorStop(.45, '#e6b65c'); gr.addColorStop(.7, '#b07a2a'); gr.addColorStop(1, '#f3d38a'); return gr; }
+// text revealed right->left with a soft edge, gold gradient and glow
+function goldText(s, y, size, font, t, t0, t1, o = {}) {
+  const pin = seg(t, t0, t0 + (o.dur || 1.1)), pout = seg(t, t1 - .5, t1); if (pin <= 0 || pout >= 1) return;
+  ui.save(); ui.font = `${o.w || 700} ${size}px ${font}`; ui.direction = o.dir || 'rtl'; ui.textAlign = 'center'; ui.textBaseline = 'middle';
+  const w = ui.measureText(s).width + size, x = W / 2, p = eout(pin);
+  ui.globalAlpha = 1 - pout;
+  ui.beginPath(); const right = x + w / 2, left = lerp(right, x - w / 2 - 40, p); ui.rect(o.dir === 'ltr' ? x - w / 2 : left, y - size, o.dir === 'ltr' ? (right - left) : right - left, size * 2); ui.clip();
+  ui.shadowColor = 'rgba(255,180,80,.55)'; ui.shadowBlur = size * .35;
+  ui.fillStyle = o.col || goldFill(ui, y, size); ui.fillText(s, x, y + (1 - p) * 10 - pout * 8);
+  ui.restore();
+}
+function badge(a) {
+  if (a <= 0) return; const w = 118, h = w * LOGO.height / LOGO.width;
+  ui.save(); ui.globalAlpha = a; ui.shadowColor = 'rgba(0,0,0,.6)'; ui.shadowBlur = 24; ui.fillStyle = '#f6efe2';
+  const x = W - w - 58, y = 34; rrect(x, y, w + 28, h + 24, 18); ui.fill(); ui.shadowColor = 'transparent';
+  ui.strokeStyle = '#c99a4c'; ui.lineWidth = 2.5; rrect(x + 5, y + 5, w + 18, h + 14, 14); ui.stroke();
+  ui.drawImage(LOGO, x + 14, y + 12, w, h); ui.restore();
+}
+function rrect(x, y, w, h, r) { ui.beginPath(); ui.moveTo(x + r, y); ui.arcTo(x + w, y, x + w, y + h, r); ui.arcTo(x + w, y + h, x, y + h, r); ui.arcTo(x, y + h, x, y, r); ui.arcTo(x, y, x + w, y, r); ui.closePath(); }
+function overlay(t) {
+  ui.clearRect(0, 0, W, H);
+  // vignette
+  const vg = ui.createRadialGradient(W / 2, H * .48, H * .28, W / 2, H * .5, H * .78); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.72)'); ui.fillStyle = vg; ui.fillRect(0, 0, W, H);
+  // lower gradient for legibility
+  const lg = ui.createLinearGradient(0, H * .72, 0, H); lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,.6)'); ui.fillStyle = lg; ui.fillRect(0, H * .72, W, H * .28);
+  const fb = eout(seg(t, 31.8, 33.0)); if (fb > 0) { const g2 = ui.createLinearGradient(0, 1180, 0, 1400); g2.addColorStop(0, 'rgba(6,4,2,0)'); g2.addColorStop(1, `rgba(6,4,2,${.9 * fb})`); ui.fillStyle = g2; ui.fillRect(0, 1180, W, 220); ui.fillStyle = `rgba(6,4,2,${.9 * fb})`; ui.fillRect(0, 1400, W, H - 1400); }
+  // act 1
+  goldText('حمص', 1560, 210, RUQ, t, 1.3, 6.6, { dur: 1.6 });
+  goldText('أمّ الحجارة السود', 1755, 76, AMI, t, 3.3, 6.6, { dur: 1.3 });
+  // act 2
+  goldText('حجارتها سود…', 1640, 84, AMI, t, 8.4, 13.3);
+  goldText('وقلوب أهلها بيض', 1780, 118, RUQ, t, 10.2, 13.3, { dur: 1.4 });
+  // act 3
+  goldText('ومن قلبها…', 1690, 80, AMI, t, 14.8, 19.8);
+  goldText('بيوصل النور لكل بيت', 1810, 104, RUQ, t, 16.4, 19.8, { dur: 1.4 });
+  // services
+  const SV = [['إنترنت لاسلكي', 'سرعة وثبات بكل حارة', 20.0, 22.6], ['طاقة شمسية', 'نور ما بينقطع', 23.33, 25.9], ['كاميرات مراقبة', 'عين ساهرة على بيتك', 26.67, 29.9]];
+  for (const [a, b, t0, t1] of SV) { goldText(a, 1640, 124, RUQ, t, t0, t1, { dur: .9 }); goldText(b, 1785, 58, AMI, t, t0 + .4, t1, { dur: .8, w: 400, col: '#efe3c8' }); }
+  // signature
+  goldText('مركز مكة للتقنيات', 1330, 104, RUQ, t, 32.2, 40, { dur: 1.4 });
+  goldText('نورٌ من قلب حمص', 1440, 56, AMI, t, 32.9, 40, { w: 400, col: '#efe3c8' });
+  const pp = eout(seg(t, 33.4, 34.2)); if (pp > 0) {
+    ui.save(); ui.globalAlpha = pp; const pw = 640, ph = 118, y = 1575 + (1 - pp) * 20;
+    ui.shadowColor = 'rgba(255,180,80,.45)'; ui.shadowBlur = 30; ui.strokeStyle = '#d9a955'; ui.lineWidth = 4; rrect(W / 2 - pw / 2, y - ph / 2, pw, ph, ph / 2); ui.stroke();
+    ui.shadowBlur = 0; ui.fillStyle = 'rgba(20,14,6,.55)'; rrect(W / 2 - pw / 2 + 6, y - ph / 2 + 6, pw - 12, ph - 12, ph / 2 - 6); ui.fill();
+    ui.font = `700 74px ${AMI}`; ui.direction = 'ltr'; ui.textAlign = 'center'; ui.textBaseline = 'middle'; ui.fillStyle = goldFill(ui, y, 74); ui.fillText('0982 621 531', W / 2, y + 4); ui.restore();
+  }
+  goldText('حمص – القصور – خلف جامع حمود الناصر', 1710, 50, AMI, t, 34.0, 40, { w: 400, col: '#efe3c8', dur: 1.0 });
+  goldText('إنترنت · طاقة شمسية · كاميرات · تكييف · متابعة', 1800, 42, AMI, t, 34.5, 40, { w: 400, col: '#cbb48a', dur: 1.0 });
+  badge(seg(t, .6, 1.6));
+  // film grain
+  const r = rng(Math.floor(t * 30) + 1); ui.fillStyle = 'rgba(255,255,255,.035)'; for (let i = 0; i < 1400; i++) ui.fillRect(r() * W, r() * H, 2, 2);
+  // fades
+  const f = Math.max(1 - seg(t, 0, .9), seg(t, DUR - .6, DUR)); if (f > 0) { ui.fillStyle = `rgba(0,0,0,${f})`; ui.fillRect(0, 0, W, H); }
+}
+
+// ---------- frame ----------
+function render(t) {
+  const [cp, ct] = camAt(t); cam.position.copy(cp); cam.lookAt(ct);
+  keyT.position.copy(ct); key.position.set(ct.x + 5, ct.y + 12, ct.z + 9); fill.position.set(ct.x - 3, ct.y - 1, ct.z + 5);
+  for (let i = 0; i < N; i++) {
+    const st = blockAt(i, t), b = blocks[i]; b.m.position.copy(st.p); b.m.quaternion.copy(st.q); b.m.scale.copy(st.s); b.m.visible = st.s.x > .01;
+    const [rv, gi] = veinAt(i, t, st); b.m.material.userData.u.uReveal.value = rv; b.m.material.emissiveIntensity = gi * (b.type ? .9 : 1.2);
+  }
+  // tower build / unbuild
+  const up = eio(seg(t, 14.6, 17.4)), down = eio(seg(t, 18.6, 19.4)), h = -.7 + (TH + .9) * up * (1 - down);
+  clip.constant = h; tower.visible = up > 0 && down < 1;
+  seam.visible = tower.visible && (up < 1 || down > 0); seam.position.set(0, h, 0); seam.material.opacity = .55;
+  const spin = t < 17.4 ? (t - 14) * 9 : 0, ang = 2 * Math.PI * (10 / 12) + spin, mang = 2 * Math.PI * (9 / 60) + spin * 12;
+  for (const [hm, hh] of hands) { hm.rotation.z = -mang; hh.rotation.z = -ang; }
+  rings.forEach((m, k) => { const p = seg(t, 17.0 + k * .3, 18.6 + k * .3); m.visible = p > 0 && p < 1; m.position.set(0, -.6 + 10.2 * TS, 0); m.scale.setScalar(1 + p * 14); m.material.opacity = (1 - p) * .9; });
+  // lens core
+  const cpop = eout(seg(t, 26.2, 27.0)) * (1 - seg(t, 29.8, 30.4)); core.visible = coreGlint.visible = cpop > 0; core.scale.setScalar(Math.max(.001, cpop)); coreGlint.scale.setScalar(Math.max(.001, cpop));
+  core.material.emissiveIntensity = .25 + .2 * Math.sin(t * 4); coreGlint.rotation.z = t * .8; coreGlint.material.opacity = .6 * cpop;
+  // plate
+  const pin = eio(seg(t, 30.6, 32.0)); plate.visible = pin > 0; plate.position.set(0, 5.3, lerp(-1.6, .35, pin)); plate.rotation.y = (1 - pin) * .5;
+  plateMat.userData.u.uReveal.value = seg(t, 31.6, 33.4) * 1.15; plateMat.emissiveIntensity = 1.6 + .25 * Math.sin(t * 2.2);
+  // dust
+  for (let i = 0; i < DUST; i++) { const s = dseed[i]; dpos[i * 3] = s[0] + Math.sin(t * .2 + s[3] * 9) * .6; dpos[i * 3 + 1] = s[1] + ((t * .12 * (.4 + s[4])) % 3) - 1.5 + Math.sin(t * .3 + s[4] * 7) * .3; dpos[i * 3 + 2] = s[2]; }
+  dg.attributes.position.needsUpdate = true;
+  composer.render(); overlay(t);
+}
+window.ready = (async () => {
+  LOGO = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'assets/logo-vertical.png'; });
+  buildPlate(LOGO);
+  await Promise.all([document.fonts.load(`700 80px "Aref Ruqaa"`, 'حمص'), document.fonts.load(`700 80px "Amiri"`, 'مكة 0982'), document.fonts.load(`400 80px "Amiri"`, 'مكة')]);
+  await document.fonts.ready; render(0); return true;
+})();
+window.render = render;
+</script>
+</body>
+</html>
